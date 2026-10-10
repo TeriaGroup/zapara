@@ -45,7 +45,7 @@
       <TextBlock Classes="caption" Text="{loc:T accountIsolation}" TextWrapping="Wrap" />
       <Button Content="{loc:T accountRecover}" Command="{Binding RecoverCommand}" IsVisible="{Binding NeedsRecovery}" />
       <StackPanel Spacing="10" IsEnabled="{Binding CanAct}">
-        <StackPanel Spacing="10" IsVisible="{Binding ShowLogin}">
+        <StackPanel Spacing="10" IsVisible="{Binding ShowLoginForm}">
           <TextBlock Text="{loc:T accountRegistration}" IsVisible="{Binding Registration}" />
           <TextBlock Text="{loc:T accountUsername}" />
           <TextBox Text="{Binding Username}" AutomationProperties.Name="{loc:T accountUsername}" AutomationProperties.AutomationId="Account.Username" />

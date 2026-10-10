@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using System.Linq;
 
 namespace Vograph.Desktop.Dialogs;
 
@@ -24,8 +25,11 @@ public partial class GroupPickerDialogView : UserControl
     /// selected row's realized container; List.Focus() alone would silently no-op.</summary>
     private void OnSearchKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Down || DataContext is not GroupPickerDialogViewModel vm) return;
-        if (vm.Selected is null && vm.Filtered.Count > 0) vm.Selected = vm.Filtered[0];
+        if (DataContext is not GroupPickerDialogViewModel vm) return;
+        // #21: Enter выбирает единственную подходящую группу; само подтверждение — общий Enter диалога.
+        if (e.Key == Key.Enter) { vm.PickSingleMatch(); return; }
+        if (e.Key != Key.Down) return;
+        if (vm.Selected is null && vm.Rows.FirstOrDefault(r => r.IsGroup) is { Group: { } first }) vm.Selected = first;
         if (List.ContainerFromIndex(List.SelectedIndex) is Control container) container.Focus();
         else List.Focus();
         e.Handled = true;

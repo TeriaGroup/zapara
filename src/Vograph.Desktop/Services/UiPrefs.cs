@@ -31,6 +31,18 @@ public sealed class UiPrefs
     /// <summary>LAN sync server on :8765 — off by default, restarted at startup when the user left it on.</summary>
     public bool LanSync { get; set; }
 
+    /// <summary>#21: недавно выбранные группы (IdGroup), новые первыми; показываются сверху в выборе группы.</summary>
+    public List<string> RecentGroupIds { get; set; } = [];
+
+    /// <summary>Ставит группу первой в недавних, без повторов, не больше <paramref name="limit"/>.</summary>
+    public void RememberGroup(string id, int limit = 5)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return;
+        RecentGroupIds.RemoveAll(x => x == id);
+        RecentGroupIds.Insert(0, id);
+        if (RecentGroupIds.Count > limit) RecentGroupIds.RemoveRange(limit, RecentGroupIds.Count - limit);
+    }
+
     private Action<Exception>? _onSaveError;
 
     /// <param name="onSaveError">Where a failed Save reports (AppServices wires it to AppLog). Save never throws.</param>

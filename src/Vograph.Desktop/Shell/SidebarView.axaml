@@ -31,14 +31,14 @@
                      IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
                      Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Tip}"
                      AutomationProperties.AutomationId="{Binding SettingsSection.AutomationId}" />
-          <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}" AutomationProperties.AutomationId="Shell.ThemeToggle" AutomationProperties.Name="{loc:T themeToggleTip}">
+          <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{Binding ThemeToggleTip}" AutomationProperties.AutomationId="Shell.ThemeToggle" AutomationProperties.Name="{Binding ThemeToggleTip}">
             <c:Icon Data="{Binding IsDark, Converter={x:Static loc:Converters.ThemeIcon}}" Size="16" />
           </Button>
         </StackPanel>
 
         <Button Classes="icon" DockPanel.Dock="Top" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{Binding SidebarToggleTip}" Margin="0,0,0,8"
                 HorizontalAlignment="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailAlignment}}"
-                AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleTip}">
+                AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleName}">
           <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
         </Button>
         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Background="Transparent">
@@ -50,7 +50,15 @@
               <StackPanel Spacing="4">
                 <TextBlock Text="{Binding GroupName}" FontSize="15" FontWeight="Medium" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
                 <TextBlock Text="{Binding GroupRailLabel}" FontSize="15" FontWeight="Medium" HorizontalAlignment="Center" IsVisible="{Binding SidebarCollapsed}" />
-                <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="12" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+                <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="12" TextTrimming="CharacterEllipsis">
+                  <TextBlock.IsVisible><MultiBinding Converter="{x:Static BoolConverters.And}"><Binding Path="!SidebarCollapsed" /><Binding Path="!NoGroupChosen" /></MultiBinding></TextBlock.IsVisible>
+                </TextBlock>
+                <!-- #21: без группы — призыв с шевроном, текст переносится, а не обрезается. -->
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" AutomationProperties.AutomationId="Shell.GroupCardCta">
+                  <Grid.IsVisible><MultiBinding Converter="{x:Static BoolConverters.And}"><Binding Path="!SidebarCollapsed" /><Binding Path="NoGroupChosen" /></MultiBinding></Grid.IsVisible>
+                  <TextBlock Text="{Binding GroupSubtitle}" FontSize="12" FontWeight="Medium" TextWrapping="Wrap" />
+                  <c:Icon Grid.Column="1" Data="{StaticResource Icon.ChevronRight}" Size="14" VerticalAlignment="Center" />
+                </Grid>
                 <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Stretch" Padding="8,5" IsVisible="{Binding ShowStaleChip}">
                   <TextBlock Text="{Binding StaleText}" TextWrapping="Wrap" />
                 </Border>

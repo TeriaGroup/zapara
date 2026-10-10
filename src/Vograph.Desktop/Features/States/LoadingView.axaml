@@ -4,7 +4,7 @@
              xmlns:vm="using:Vograph.Desktop.Features.States"
              x:Class="Vograph.Desktop.Features.States.LoadingView"
              x:DataType="vm:LoadingViewModel">
-  <StackPanel Margin="32,26" MaxWidth="760" Spacing="10">
+  <StackPanel Margin="24,20" MaxWidth="760" Spacing="10">
     <TextBlock Classes="display muted" Text="{Binding Title}" Margin="0,0,0,18" />
     <Border Classes="card"><StackPanel Spacing="10"><c:Skeleton Width="180" HorizontalAlignment="Left" /><c:Skeleton Width="320" HorizontalAlignment="Left" /></StackPanel></Border>
     <Border Classes="card"><StackPanel Spacing="10"><c:Skeleton Width="140" HorizontalAlignment="Left" /><c:Skeleton Width="260" HorizontalAlignment="Left" /></StackPanel></Border>

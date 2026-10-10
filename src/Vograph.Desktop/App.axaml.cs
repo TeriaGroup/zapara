@@ -70,21 +70,44 @@ public partial class App : Application
         // Headless tests use a different lifetime and build their own services.
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            string dataDir;
-            AppServices services;
-            try
+            if (TryCreateServices(out var services, out var error)) Start(desktop, services!);
+            else
             {
-                dataDir = AppPaths.DataDir;
-                services = AppServices.Create(dataDir, MotionSettings.ReadSystemSetting, ZaparaServer.TimetableBaseUrl() ?? "");
+                // «Повторить» (#18, D-01) заново создаёт сервисы; при успехе открывается главное окно, окно ошибки закрывается.
+                var errorWindow = new StartupErrorWindow { DataContext = error };
+                errorWindow.Retry = attempt =>
+                {
+                    if (!TryCreateServices(out var retried, out var again, attempt)) return again;
+                    Start(desktop, retried!);
+                    desktop.MainWindow!.Show();
+                    return null;
+                };
+                desktop.MainWindow = errorWindow;
             }
-            catch (Exception ex)
-            {
-                dataDir = SafeDataDir();
-                var log = WriteStartupError(ex, dataDir);
-                desktop.MainWindow = new StartupErrorWindow { DataContext = new StartupError(ex.Message, dataDir, log) };
-                base.OnFrameworkInitializationCompleted();
-                return;
-            }
+        }
+        base.OnFrameworkInitializationCompleted();
+    }
+
+    private static bool TryCreateServices(out AppServices? services, out StartupError? error, int attempt = 0)
+    {
+        try
+        {
+            services = AppServices.Create(AppPaths.DataDir, MotionSettings.ReadSystemSetting, ZaparaServer.TimetableBaseUrl() ?? "");
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            var dataDir = SafeDataDir();
+            services = null;
+            error = StartupError.From(ex, dataDir, WriteStartupError(ex, dataDir), attempt);
+            return false;
+        }
+    }
+
+    private void Start(IClassicDesktopStyleApplicationLifetime desktop, AppServices services)
+    {
+        {
             Services = services;
             services.AllowNetwork = !ReadOfflineSwitch(Environment.GetEnvironmentVariable);
             if (!services.AllowNetwork) services.Log.Info("offline switch: network disabled for this run");
@@ -120,6 +143,5 @@ public partial class App : Application
             };
             services.Log.Info("desktop started");
         }
-        base.OnFrameworkInitializationCompleted();
     }
 }

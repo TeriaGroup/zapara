@@ -43,7 +43,8 @@ internal static partial class WebEndpoints
                 await Store(c).DeleteAsync(c);
             }
             var session = await Service(c).LoginAsync(new(request.Username, request.Password,
-                new DeviceInput(Guid.NewGuid(), request.DeviceName ?? "Браузер «Расписание военмех»", "web")), c.RequestAborted);
+                new DeviceInput(Guid.NewGuid(), request.DeviceName ?? "Браузер «Расписание военмех»", "web")),
+                LoginThrottle.NetworkKey(c.Connection.RemoteIpAddress), c.RequestAborted);
             return await CompleteLogin(c, session);
         }, authenticated: false, rate: "account-login");
         Route(group, "POST", "/auth/logout", async c =>
@@ -119,7 +120,11 @@ internal static partial class WebEndpoints
             }
             catch (WebRequestException e) { return AccountErrors.Problem(e.Status, e.Code); }
             catch (AccountBodyException e) { return AccountErrors.Problem(e.Status, "invalid_request"); }
-            catch (AccountServiceException e) { return AccountErrors.From(e); }
+            catch (AccountServiceException e)
+            {
+                if (e.Failure == AccountFailure.RateLimited) c.Response.Headers.RetryAfter = AccountErrors.RetryAfter(e);
+                return AccountErrors.From(e);
+            }
             catch (ExternalAuthException e) { return AccountErrors.Problem(e.Status, e.Code); }
             catch (Zapara.Server.Notifications.PushOperationException e) { return AccountErrors.Problem(e.Status, e.Code); }
             catch (Zapara.Server.Sync.SyncInputException e) { return Zapara.Server.Sync.SyncHttpResult.Error(new(e.Status, e.Status == 413 ? "payload_too_large" : "invalid_request")); }

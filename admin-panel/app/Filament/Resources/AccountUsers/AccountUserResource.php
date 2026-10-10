@@ -11,6 +11,7 @@ use App\Rules\PasswordRule;
 use App\Rules\UsernameRule;
 use App\Services\AccountDirectory;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -48,6 +49,7 @@ class AccountUserResource extends Resource
                 ->password()
                 ->revealable()
                 ->required(fn (string $operation): bool => $operation === 'create')
+                ->helperText(fn (string $operation): string => $operation === 'create' ? '12–128 символов.' : '12–128 символов. Оставьте пустым, чтобы не менять.')
                 ->dehydrated(fn (?string $state): bool => filled($state))
                 ->rule(fn (string $operation): PasswordRule => new PasswordRule($operation === 'create')),
         ]);
@@ -61,41 +63,75 @@ class AccountUserResource extends Resource
                 TextColumn::make('display_name')->label('Отображаемое имя')->searchable(),
                 TextColumn::make('status')
                     ->label('Статус')
+                    ->badge()
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        'active' => 'активен',
-                        'disabled' => 'отключён',
-                        'deleting' => 'удаляется',
+                        'active' => 'Активен',
+                        'disabled' => 'Отключён',
+                        'deleting' => 'Удаляется',
                         default => (string) $state,
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'active' => 'success',
+                        'disabled' => 'danger',
+                        default => 'gray',
                     }),
             ])
             ->defaultSort('created_at', 'desc')
+            ->stackedOnMobile()
+            // Без «Создать … для старта»: кнопка создания уже есть в заголовке страницы.
+            ->emptyStateDescription(null)
             ->recordActions([
                 Action::make('edit')->label('Изменить')->url(fn (AccountUser $record): string => static::getUrl('edit', ['record' => $record])),
-                Action::make('disable')
-                    ->label('Отключить')
-                    ->schema([
-                        TextInput::make('current_password')->label('Подтверждение пароля')->password(),
-                    ])
-                    ->action(function (AccountUser $record, array $data): void {
-                        $actor = auth()->user();
-                        if (! $actor instanceof AccountUser) {
-                            abort(403);
-                        }
-                        app(AccountDirectory::class)->disable($actor, $record, $data['current_password'] ?? null);
-                    }),
-                Action::make('remove')
-                    ->label('Удалить')
-                    ->schema([
-                        TextInput::make('current_password')->label('Подтверждение пароля')->password(),
-                    ])
-                    ->action(function (AccountUser $record, array $data): void {
-                        $actor = auth()->user();
-                        if (! $actor instanceof AccountUser) {
-                            abort(403);
-                        }
-                        app(AccountDirectory::class)->remove($actor, $record, $data['current_password'] ?? null);
-                    }),
+                ActionGroup::make([
+                    Action::make('disable')
+                        ->label('Отключить')
+                        ->icon('heroicon-o-no-symbol')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading('Отключить пользователя?')
+                        ->modalDescription(fn (AccountUser $record): string => static::who($record).' не сможет войти, все его сеансы завершатся.')
+                        ->modalSubmitActionLabel('Отключить')
+                        ->schema([
+                            TextInput::make('current_password')->label('Подтверждение пароля')->helperText('Введите свой пароль для подтверждения.')->password(),
+                        ])
+                        ->action(function (AccountUser $record, array $data): void {
+                            $actor = auth()->user();
+                            if (! $actor instanceof AccountUser) {
+                                abort(403);
+                            }
+                            app(AccountDirectory::class)->disable($actor, $record, $data['current_password'] ?? null);
+                        }),
+                    Action::make('remove')
+                        ->label('Удалить')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading('Удалить пользователя?')
+                        ->modalDescription(fn (AccountUser $record): string => 'Аккаунт '.static::who($record).' будет поставлен на удаление, все его сеансы завершатся.')
+                        ->modalSubmitActionLabel('Удалить')
+                        ->schema([
+                            TextInput::make('current_password')->label('Подтверждение пароля')->helperText('Введите свой пароль для подтверждения.')->password(),
+                        ])
+                        ->action(function (AccountUser $record, array $data): void {
+                            $actor = auth()->user();
+                            if (! $actor instanceof AccountUser) {
+                                abort(403);
+                            }
+                            app(AccountDirectory::class)->remove($actor, $record, $data['current_password'] ?? null);
+                        }),
+                ])
+                    ->label('Ещё')
+                    ->tooltip('Ещё действия'),
             ]);
+    }
+
+    private static function who(AccountUser $record): string
+    {
+        $name = (string) $record->display_name;
+
+        return $name !== '' && $name !== $record->username
+            ? $name.' ('.$record->username.')'
+            : (string) $record->username;
     }
 
     public static function getPages(): array

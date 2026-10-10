@@ -12,7 +12,7 @@
       <Setter Property="BorderThickness" Value="3,1,1,1" />
     </Style>
   </UserControl.Styles>
-  <Grid Margin="32,26" RowDefinitions="Auto,*" MaxWidth="1080" HorizontalAlignment="Stretch">
+  <Grid Margin="24,20" RowDefinitions="Auto,*" MaxWidth="1080" HorizontalAlignment="Left">
     <StackPanel Spacing="4">
       <TextBlock Classes="display" Text="Чаты" />
       <Button Content="{Binding IncomingCaption}" Click="JumpToInvites" IsVisible="{Binding HasIncoming}" HorizontalAlignment="Left" AutomationProperties.Name="Перейти к приглашениям" />
@@ -20,8 +20,8 @@
       <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap" />
     </StackPanel>
     <StackPanel Grid.Row="1" IsVisible="{Binding NeedAccount}" Spacing="10" VerticalAlignment="Center">
-      <c:EmptyState Title="Войдите в аккаунт" Hint="Личные чаты и группы доступны после входа." Icon="{StaticResource Icon.Chat}" />
-      <Button Content="Открыть настройки аккаунта" Command="{Binding OpenAccountCommand}" HorizontalAlignment="Center" />
+      <c:EmptyState Title="{loc:T signInRequired}" Hint="{Binding NeedAccountHint}" Icon="{StaticResource Icon.Chat}" AutomationProperties.AutomationId="Chat.NeedAccount"
+                    ActionText="{Binding SignInAction}" Command="{Binding OpenAccountCommand}" ActionAutomationId="Chat.SignIn" />
     </StackPanel>
     <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="340,16,*" IsVisible="{Binding !NeedAccount}">
       <Border Classes="card" Padding="10" ClipToBounds="True">
