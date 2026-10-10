@@ -17,6 +17,7 @@ import { dayLoad, dueBucket, errorHint, noteSearch, summaryRows, chooseBuildingP
 import { SearchField, FilterEmpty, useClock, useConnectivity, useBrowseValue, focusElement, SecretInput } from "./ux300-controls";
 import { revealQuote } from "./quote-navigation";
 import { groupWireText, scalarInput } from "./scalar-input";
+import { loginMissing, missingText, passwordRules, registrationMissing, ruleMark, type Touched } from "./register-form";
 import { ChangeEvent, FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useDateReveal, useSwipe } from "./swipe";
@@ -2280,7 +2281,8 @@ function SettingsContent() {
   const [confirmation,setConfirmation]=useState("");
   const [display, setDisplay] = useState(()=>accountDraft(owner).display);
   const [mode, setMode] = useState<"login" | "register">(()=>accountDraft(owner).mode);
-  useEffect(()=>{setPassword("");setConfirmation("");},[mode]);
+  const [touched,setTouched]=useState<Touched>({});
+  useEffect(()=>{setPassword("");setConfirmation("");setTouched({});},[mode]);
   const [accepted, setAccepted] = useState(()=>accountDraft(owner).accepted);
   useEffect(()=>{rememberAccountDraft(owner,{username,display,mode,accepted});},[owner,username,display,mode,accepted]);
   const legalState={owner,returnTo:location.pathname+location.search};
@@ -2321,6 +2323,10 @@ function SettingsContent() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
+    // #16: кнопка всегда активна; при отправке показываем, чего не хватает.
+    setTouched(value=>({...value,submitted:true}));
+    if(mode==="login"&&loginMissing(username,password)){setError("");return;}
+    if(mode==="register"&&registrationMissing({username,password,confirmation,accepted}).length){setError("");return;}
     if(mode==="register"&&(password!==confirmation||!scalarInput(password,12,128,false))){setError("Проверьте пароль и его подтверждение.");return;}
     setBusy(true);
     setError("");
@@ -2405,7 +2411,7 @@ function SettingsContent() {
             </div>
           ) : (
             <form className="stack" onSubmit={event => void submit(event)}>
-              <p className="muted">Гостевой профиль: расписание доступно без аккаунта и сети, если копия уже сохранена.</p>
+              <p className="muted">Без аккаунта расписание работает и офлайн. Аккаунт нужен для чатов и синхронизации.</p>
               {(yandex || vk) && (
                 <div className="providers">
                   <p className="muted">Войти с помощью</p>
@@ -2420,18 +2426,20 @@ function SettingsContent() {
                 <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")} disabled={!app.session?.capabilities.registration}>Регистрация</button>
               </div>
               {app.session?.capabilities.password !== false && <><label className="field">Логин<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" /></label>
-              <SecretInput label="Пароль" value={password} onChange={setPassword} autoComplete={mode==="register"?"new-password":"current-password"}/>{mode==="register"&&<><SecretInput label="Повторите пароль" value={confirmation} onChange={setConfirmation} autoComplete="new-password"/><ul className="muted"><li>{[...password].length>=12&&[...password].length<=128?"✓":"○"} От 12 до 128 символов</li><li>{scalarInput(password,0,100000,false)?"✓":"○"} Без недопустимых символов</li><li>{password&&password===confirmation?"✓":"○"} Подтверждение совпадает</li></ul></>}</>}
+              <SecretInput label="Пароль" value={password} onChange={setPassword} autoComplete={mode==="register"?"new-password":"current-password"} onBlur={()=>setTouched(value=>({...value,password:true}))} describedBy={mode==="register"?"password-rules":undefined} invalid={mode==="register"&&passwordRules(password,confirmation,touched).slice(0,2).some(rule=>rule.state==="bad")}/>
+              {mode==="login"&&<button type="button" className="link-btn forgot-password" onClick={()=>{const recovery=document.getElementById("password-recovery") as HTMLDetailsElement|null;if(!recovery)return;recovery.open=true;recovery.scrollIntoView({block:"nearest"});recovery.querySelector<HTMLElement>("summary")?.focus();}}>Забыли пароль?</button>}
+              {mode==="register"&&<><SecretInput label="Повторите пароль" value={confirmation} onChange={setConfirmation} autoComplete="new-password" onBlur={()=>setTouched(value=>({...value,confirmation:true}))} describedBy="password-rules" invalid={passwordRules(password,confirmation,touched)[2].state==="bad"}/><ul className="password-rules" id="password-rules">{passwordRules(password,confirmation,touched).map(rule=><li key={rule.key} className={"rule-"+rule.state}><span aria-hidden="true">{ruleMark[rule.state]}</span> {rule.label}{rule.state!=="neutral"&&<span className="sr-only">{rule.state==="ok"?" — выполнено":" — не выполнено"}</span>}</li>)}</ul></>}</>}
               {mode === "register" && <label className="field">Имя<input value={display} onChange={event => setDisplay(event.target.value)} /></label>}
               {mode === "register" && (
                 <label className="check">
                   <input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} />
-                  <span className="check-marks" aria-hidden="true"><Icon name="file" size={16} /><Icon name="shield" size={16} /></span>
                   <span>Я принимаю <Link to="/legal/agreement" state={legalState}>пользовательское соглашение</Link> и <Link to="/legal/policy" state={legalState}>политику обработки персональных данных</Link>.</span>
                 </label>
               )}
               {error && <div className="banner">{error}</div>}
-              <LegalLinks />
-              {app.session?.capabilities.password !== false && <button className="btn primary" type="submit" disabled={busy || (mode === "register" && (!accepted || password!==confirmation || !scalarInput(password,12,128,false)))}>{busy ? "Входим…" : mode === "login" ? "Войти" : "Создать аккаунт"}</button>}
+              {mode !== "register" && <LegalLinks />}
+              {app.session?.capabilities.password !== false && <button className="btn primary" type="submit" disabled={busy} aria-describedby="form-missing">{busy ? "Входим…" : mode === "login" ? "Войти" : "Создать аккаунт"}</button>}
+              <p className="form-missing" id="form-missing" role="status">{touched.submitted ? (mode === "register" ? missingText(registrationMissing({ username, password, confirmation, accepted })) : loginMissing(username, password)) : ""}</p>
             </form>
           )}
         </article>}

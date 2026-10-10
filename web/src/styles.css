@@ -196,6 +196,28 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .field input, .field textarea, select, .search { padding: 10px 12px; outline: none; width: 100%; border-radius: 8px; font-size: 15px; line-height: 1.3; }
 .field input, select, .search { min-height: 48px; }
 .field textarea { min-height: 90px; resize: vertical; }
+/* #16: поля видны на любом фоне — граница ≥3:1 (токен --zp-border-control из #50, до его слияния — запасное значение),
+   плейсхолдер ≥4.5:1 к заливке поля, кольцо фокуса 2 px. */
+:root { --field-border: var(--zp-border-control, #7a7a7a); --field-fill: var(--canvas); --field-placeholder: var(--zp-text-secondary, #a0a0a0); --field-focus: var(--zp-focus, var(--text)); }
+:root[data-theme="light"] { --field-border: var(--zp-border-control, #767676); --field-placeholder: var(--zp-text-secondary, #595959); }
+.field input, .field textarea, .field select, select, .search, .search-field-input, .personal-compose textarea, .compose input, .compose textarea { border: 1px solid var(--field-border); background: var(--field-fill); }
+.search-field-input input { border: 0; background: transparent; }
+input::placeholder, textarea::placeholder { color: var(--field-placeholder); opacity: 1; }
+.field input:focus-visible, .field textarea:focus-visible, select:focus-visible, .search:focus-visible, .compose input:focus-visible, .compose textarea:focus-visible, .personal-compose textarea:focus-visible { outline: 2px solid var(--field-focus); outline-offset: 1px; border-color: var(--field-focus); }
+.search-field-input:focus-within { outline: 2px solid var(--field-focus); outline-offset: 1px; }
+.search-field-input input:focus-visible { outline: none; }
+.secret-field { position: relative; display: flex; }
+.secret-field input { flex: 1 1 auto; min-width: 0; padding-right: 48px; }
+.secret-toggle { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.secret-toggle:hover { color: var(--text); background: var(--selection); }
+.password-rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
+.password-rules .rule-ok { color: var(--ok); }
+.password-rules .rule-bad { color: var(--bad); }
+.link-btn { align-self: flex-start; padding: 4px 0; border: 0; background: none; color: var(--text); text-decoration: underline; text-underline-offset: 3px; font-size: 14px; cursor: pointer; }
+.form-missing { margin: 0; font-size: 14px; color: var(--bad); }
+.form-missing:empty { display: none; }
+.password-recovery > summary { list-style: none; cursor: pointer; font-weight: 600; }
+.password-recovery > summary::-webkit-details-marker { display: none; }
 .compose { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .compose-context { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-left: 3px solid var(--line); border-radius: 6px; background: var(--chip); }
 .compose-context-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
