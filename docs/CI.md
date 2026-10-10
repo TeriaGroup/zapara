@@ -61,11 +61,14 @@ Android (`gradlew`), `scripts/timetable/Verify-Milestone.ps1`.
 ## Что нужно на раннере
 
 SDK и интерпретаторы ставят сами задания: `actions/setup-dotnet` (.NET 8 в `$RUNNER_TEMP/dotnet`: каталоги по умолчанию пользователю раннера недоступны для записи; задание `desktop` ставит ещё SDK 10, генераторам Avalonia 12 нужен Roslyn 4.14+),
-`actions/setup-node` (Node 24), `shivammathur/setup-php` (PHP 8.3, `pdo_pgsql`, `pdo_sqlite`, `intl`, `zip`, `mbstring`, Composer 2).
+`actions/setup-node` (Node 24). PHP задания не ставят: у пользователя раннера нет `sudo`, а `setup-php` ставит PHP через `apt`.
 Предустановить нужно:
 
-- Linux x64, Ubuntu или Debian (setup-php на собственном раннере поддерживает только их);
-- `sudo` без пароля для пользователя раннера: setup-php ставит PHP и расширения через `apt` (без этого задание `admin` падает на setup-php через 10 минут);
+- Linux x64, Ubuntu или Debian;
+- PHP 8.3 или новее с расширениями `pdo_pgsql`, `pdo_sqlite`, `intl`, `zip`, `mbstring` и Composer 2 в `PATH` пользователя раннера.
+  На Ubuntu/Debian (от root): `apt-get install php8.3-cli php8.3-pgsql php8.3-sqlite3 php8.3-intl php8.3-zip php8.3-mbstring composer`
+  (имена пакетов зависят от версии PHP в дистрибутиве). Задание `admin` первым шагом проверяет PHP, расширения и Composer;
+  если чего-то нет, оно за несколько секунд падает с `::error::` и списком недостающего. `sudo` раннеру не нужен;
 - Docker Engine, пользователь раннера в группе `docker`; образ `postgres:16-alpine` скачивается при первом запуске;
 - `git`, `curl`, `openssl`, `tar`, `xz-utils`, `unzip`;
 - библиотеки для .NET и Avalonia headless: `libicu`, `libssl`, `libfontconfig1` и хотя бы один шрифт (если `libfontconfig1` или шрифтов нет, задание `desktop` распаковывает `libfontconfig1` и `fonts-dejavu-core` из `.deb` в `$RUNNER_TEMP` без root);
