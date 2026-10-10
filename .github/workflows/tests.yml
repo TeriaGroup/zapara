@@ -109,7 +109,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      # setup-php installs PHP with passwordless sudo/apt (docs/CI.md); without it the step would wait, so it is bounded.
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        timeout-minutes: 10
         env:
           runner: self-hosted
         with:
@@ -238,14 +240,23 @@ jobs:
             8.0.x
             10.0.x
 
-      # libSkiaSharp (Avalonia headless rendering) needs libfontconfig.so.1. Installed only when missing,
-      # with the same passwordless sudo/apt that setup-php uses on this runner (docs/CI.md).
+      # libSkiaSharp (Avalonia headless rendering) needs libfontconfig.so.1. The runner user has no sudo, so when
+      # the library is missing it is unpacked from the distribution's .deb into RUNNER_TEMP (no root, nothing
+      # installed system-wide) and put on LD_LIBRARY_PATH for the test step.
       - name: Native libraries for Avalonia headless
         run: |
-          if ! ldconfig -p | grep -q 'libfontconfig\.so\.1'; then
-            sudo -n apt-get update -q
-            sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends libfontconfig1
-          fi
+          if ldconfig -p | grep -q 'libfontconfig\.so\.1'; then exit 0; fi
+          dir="$RUNNER_TEMP/native"
+          rm -rf "$dir" && mkdir -p "$dir/debs" "$dir/root"
+          cd "$dir/debs"
+          apt-get download libfontconfig1
+          for p in libfreetype6 libexpat1 libpng16-16t64 libpng16-16 libbrotli1 fontconfig-config; do
+            dpkg -s "$p" >/dev/null 2>&1 || apt-get download "$p" 2>/dev/null || true
+          done
+          for f in *.deb; do dpkg-deb -x "$f" "$dir/root"; done
+          lib="$(dirname "$(find "$dir/root" -name 'libfontconfig.so.1' | head -n 1)")"
+          echo "LD_LIBRARY_PATH=$lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          if [ -f "$dir/root/etc/fonts/fonts.conf" ]; then echo "FONTCONFIG_FILE=$dir/root/etc/fonts/fonts.conf" >> "$GITHUB_ENV"; fi
 
       - name: Client library tests
         run: |
