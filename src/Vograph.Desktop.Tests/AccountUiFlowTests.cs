@@ -263,7 +263,9 @@ public sealed partial class AccountUiFlowTests
         using var vm = new AccountPanelViewModel();
         await vm.InitializeAsync();
         Assert.False(vm.CanAct);
-        Assert.Equal("Сервер аккаунтов не настроен", vm.Status);
+        Assert.Equal("Вход временно недоступен. Расписание, карты и домашка работают без аккаунта.", vm.Status);
+        Assert.False(vm.SignInWorks);
+        Assert.False(vm.ShowLoginForm);
         vm.Password = Password; vm.Dispose();
         Assert.Empty(vm.Password);
     }

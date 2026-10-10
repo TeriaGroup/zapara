@@ -99,3 +99,14 @@ test("avatar image rejects declared oversize before reading its body", async () 
     assert.equal(cancelled, true);
   } finally { globalThis.fetch = previous; }
 });
+
+test("404 marks the avatar as missing; 401/403 do not (#34)", async () => {
+  const previous = globalThis.fetch;
+  let status = 404;
+  globalThis.fetch = async () => new Response(null, { status });
+  try {
+    assert.deepEqual(await api.avatarImage("user", "u1"), { url: null, etag: null, missing: true });
+    status = 403;
+    assert.deepEqual(await api.avatarImage("user", "u1"), { url: null, etag: null });
+  } finally { globalThis.fetch = previous; }
+});

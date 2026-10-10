@@ -89,20 +89,28 @@ public sealed partial class AccountApiTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task ACC06_Generic_wrong_unknown_and_persisted_locked_login()
+    public async Task ACC06_Generic_wrong_unknown_login_then_network_throttle_without_account_lock()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(output.WriteLine, true);
-        string expected;
         await using (var host = new AccountApiTestHost(db))
         {
             await host.Register();
-            expected = (await host.Send("POST", "/auth/login", 401, LoginBody("unknown"), code: "invalid_credentials")).GetRawText();
-            for (var i = 0; i < 5; i++)
+            var expected = (await host.Send("POST", "/auth/login", 401, LoginBody("unknown"), code: "invalid_credentials")).GetRawText();
+            for (var i = 0; i < 4; i++)
                 Assert.Equal(expected, (await host.Send("POST", "/auth/login", 401, LoginBody(password: NewPassword), code: "invalid_credentials")).GetRawText());
+            await host.Send("POST", "/auth/login", 401, LoginBody(password: NewPassword), code: "invalid_credentials");
+            // Same client network, same account: throttled, even with the right password.
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login")
+            { Content = new StringContent(JsonSerializer.Serialize(LoginBody(), Json), System.Text.Encoding.UTF8, "application/json") };
+            using var response = await host.Client.SendAsync(request, Ct);
+            Assert.Equal(429, (int)response.StatusCode);
+            Assert.True(response.Headers.RetryAfter?.Delta > TimeSpan.FromSeconds(60));
+            Assert.Contains("rate_limited", await response.Content.ReadAsStringAsync(Ct));
         }
-        await using var restarted = new AccountApiTestHost(db);
-        Assert.Equal(expected, (await restarted.Send("POST", "/auth/login", 401, LoginBody(), code: "invalid_credentials")).GetRawText());
         Assert.Equal(5, await db.ScalarAsync<int>($"SELECT failed_count FROM {db.QuotedSchema}.password_credentials"));
+        Assert.Equal(0L, await db.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.password_credentials WHERE locked_until IS NOT NULL"));
+        await using var restarted = new AccountApiTestHost(db);
+        await restarted.Login();
     }
 
     [Fact]

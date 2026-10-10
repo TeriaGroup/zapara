@@ -4,6 +4,7 @@ import { groupWireText } from "./scalar-input";
 import { sendOnEnter } from "./personal-composer";
 import { groupCircleLimit, groupVoiceLimit, recordingFilename } from "./group-media";
 import { Sheet } from "./sheet";
+import { composerHelp, composerLabels, hasDesktopKeyboard } from "./chat-ui";
 
 type RecordingKind = "voice" | "circle";
 type AttachmentKind = "image" | "video" | "file";
@@ -46,6 +47,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, wireContex
   const composing = useRef(false);
   const wire = groupWireText(draft, wireContext, editing);
   const [panel, setPanel] = useState(false);
+  const [desktopKeyboard] = useState(() => hasDesktopKeyboard());
   const [recording, setRecording] = useState<RecordingKind | null>(null);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -215,17 +217,17 @@ export function GroupComposer({ draft, editing, replyTo, contextText, wireContex
         <button className="btn tool" type="button" aria-label={editing ? "Отменить редактирование" : "Отменить ответ"} onClick={onCancelContext}>Отменить</button>
       </div>}
       <form className="compose" onSubmit={onSubmit}>
-        {!editing && allowMedia && <button className="btn tool" type="button" aria-label="Вложения" disabled={starting || sending}
+        {!editing && allowMedia && <button className="btn tool" type="button" aria-label={composerLabels.attach} title={composerLabels.attach} disabled={starting || sending}
           onClick={() => setPanel(value => !value)}><Icon name="paperclip" size={18} /></button>}
         <textarea ref={input} rows={2} value={draft} onChange={event => onDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={event => { if (sendOnEnter(event.key, event.shiftKey, composing.current || event.nativeEvent.isComposing, event.keyCode === 229, window.matchMedia("(pointer: fine)").matches)) { event.preventDefault(); if (wire.valid && !sending) event.currentTarget.form?.requestSubmit(); } }} />
         {draft.trim() || editing || !allowMedia
           ? <button className="btn primary" type="submit" disabled={!wire.valid || sending}>{editing ? "Сохранить" : "Отправить"}</button>
           : <>
-              <button className="btn tool" type="button" aria-label="Кружок" disabled={starting || sending} onClick={() => void begin("circle")}><Icon name="circle" size={18} /></button>
-              <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={starting || sending} onClick={() => void begin("voice")}><Icon name="mic" size={18} /></button>
+              <button className="btn tool" type="button" aria-label={composerLabels.circle} title={composerLabels.circle} disabled={starting || sending} onClick={() => void begin("circle")}><Icon name="circle" size={18} /></button>
+              <button className="btn primary tool" type="button" aria-label={composerLabels.voice} title={composerLabels.voice} disabled={starting || sending} onClick={() => void begin("voice")}><Icon name="mic" size={18} /></button>
             </>}
       </form>
-      <p className="muted group-composer-help" role="status">{wire.count}/2000 · Shift+Enter — новая строка{draft.trim() && wire.error ? ` · ${wire.error}` : ""}</p>
+      <p className="muted group-composer-help" role="status">{composerHelp(wire.count, draft.trim() ? wire.error || "" : "", desktopKeyboard)}</p>
       {sending && <p className="muted">Отправка записи…</p>}
       {panel && allowMedia && !editing && <Sheet title="Прикрепить" onClose={()=>setPanel(false)}><div className="actions group-attachment-menu">
         <button type="button" onClick={() => { setPanel(false); onChoose("image"); }}>Фото</button>

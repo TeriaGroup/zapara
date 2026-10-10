@@ -6,7 +6,7 @@
              x:Class="Vograph.Desktop.Features.Communities.CommunitiesView"
              x:DataType="cm:CommunitiesViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="32,26" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
+    <StackPanel Margin="24,20" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
       <StackPanel>
         <TextBlock Classes="display" Text="{Binding Title}" />
         <TextBlock Classes="muted" Text="{Binding Status}" Margin="0,4,0,0" TextWrapping="Wrap"
@@ -14,10 +14,10 @@
                    AutomationProperties.AutomationId="Community.Status" />
       </StackPanel>
 
-      <c:EmptyState IsVisible="{Binding NeedAccount}" Title="{loc:T communityNeedAccount}"
-                    Hint="{loc:T accountIsolation}" Icon="{StaticResource Icon.Friends}" Margin="0,24"
-                    AutomationProperties.AutomationId="Community.NeedAccount" />
-      <Button Content="Открыть настройки аккаунта" Command="{Binding OpenAccountCommand}" IsVisible="{Binding NeedAccount}" HorizontalAlignment="Left" />
+      <c:EmptyState IsVisible="{Binding NeedAccount}" Title="{loc:T signInRequired}"
+                    Hint="{Binding NeedAccountHint}" Icon="{StaticResource Icon.Friends}" Margin="0,24"
+                    AutomationProperties.AutomationId="Community.NeedAccount"
+                    ActionText="{Binding SignInAction}" Command="{Binding OpenAccountCommand}" ActionAutomationId="Community.SignIn" />
       <Button Content="Повторить загрузку сообществ" Command="{Binding RetryCommunitiesCommand}" IsVisible="{Binding LoadFailed}" HorizontalAlignment="Left" />
       <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T communityEmpty}"
                     Icon="{StaticResource Icon.Friends}" Margin="0,24"
