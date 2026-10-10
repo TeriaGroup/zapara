@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -333,7 +334,7 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             ZButton(stringResource(R.string.repeat), { onEvent(AccountEvent.RetryCapabilities) },
                 ghost = true, enabled = !state.capabilitiesLoading, tag = "Account.RetryCapabilities")
         }
-        if (!state.showAccount) {
+        if (!state.showAccount && !(state.guest && state.registration)) { // в регистрации документы — у согласия
         Text(stringResource(R.string.account_isolation), style = Zapara.typography.caption, color = c.text2)
         ZActionButton(stringResource(R.string.face_agreement), { onOpenLegal("agreement") },
             tag = "Legal.Agreement", leadingIcon = R.drawable.ic_file)
@@ -348,18 +349,32 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             }
             var confirmPassword by remember(state.registration) { mutableStateOf("") }
             LaunchedEffect(state.password) { if (state.password.isEmpty()) confirmPassword = "" }
-            AccountField(state.username, stringResource(R.string.account_username), "Account.Username") {
+            // #109 / AN-16: вкладки «Вход / Регистрация»; ошибки — после ухода с поля или нажатия основной кнопки.
+            var attempted by remember(state.registration) { mutableStateOf(false) }
+            val touched = remember(state.registration) { androidx.compose.runtime.mutableStateListOf<String>() }
+            fun shown(field: String) = attempted || field in touched
+            if (state.registrationAvailable) {
+                ru.bgtu_voenmeh.zapara.ui.components.ZSegmented(
+                    listOf(stringResource(R.string.account_tab_login), stringResource(R.string.account_tab_register)),
+                    selected = if (state.registration) 1 else 0,
+                    onSelect = { index -> if ((index == 1) != state.registration && !state.busy && !state.externalPending)
+                        onEvent(AccountEvent.ToggleRegistration) },
+                    tag = "Account.Mode", modifier = Modifier.fillMaxWidth())
+            }
+            AccountField(state.username, stringResource(R.string.account_username), "Account.Username",
+                onBlur = { touched += "username" }) {
                 onEvent(AccountEvent.Username(it))
             }
-            if (!state.usernameValid) Text(stringResource(R.string.ux60_account_username_hint),
-                style = Zapara.typography.caption, color = if (state.username.isBlank()) c.text2 else c.text1)
+            if (!state.usernameValid && shown("username")) Text(stringResource(R.string.ux60_account_username_hint),
+                style = Zapara.typography.caption, color = c.bad, modifier = Modifier.testTag("Account.UsernameError"))
             AccountField(state.password, stringResource(R.string.account_password), "Account.Password", password = true,
+                onBlur = { touched += "password" },
                 onDone = if (!state.registration && state.canSubmitCredentials) {{ onEvent(AccountEvent.Submit) }} else null) {
                 onEvent(AccountEvent.Password(it))
             }
             if (state.registration) PasswordProgress(state.password)
-            else if (!state.passwordValid) Text(stringResource(R.string.ux60_account_password_hint),
-                style = Zapara.typography.caption, color = if (state.password.isEmpty()) c.text2 else c.text1)
+            else if (!state.passwordValid && shown("password")) Text(stringResource(R.string.ux60_account_password_hint),
+                style = Zapara.typography.caption, color = c.bad, modifier = Modifier.testTag("Account.PasswordError"))
             if (state.registration) {
                 AccountField(confirmPassword, stringResource(R.string.ux300_android_confirm_password),
                     "Account.ConfirmPassword", password = true) { confirmPassword = it }
@@ -368,27 +383,32 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                         style = Zapara.typography.caption, color = c.bad,
                         modifier = Modifier.testTag("Account.PasswordMismatch"))
                 AccountField(state.displayName, stringResource(R.string.account_display_name), "Account.DisplayName",
+                    onBlur = { touched += "name" },
                     onDone = if (state.canSubmitCredentials && confirmPassword == state.password) {{ onEvent(AccountEvent.Submit) }} else null) {
                     onEvent(AccountEvent.DisplayName(it))
                 }
-                if (!state.registrationNameValid) Text(stringResource(R.string.ux60_account_name_hint),
-                    style = Zapara.typography.caption, color = if (state.displayName.isBlank()) c.text2 else c.text1)
+                if (!state.registrationNameValid && shown("name")) Text(stringResource(R.string.ux60_account_name_hint),
+                    style = Zapara.typography.caption, color = c.bad)
                 AcceptDocuments(
                     checked = state.documentsAccepted,
-                    onChange = { onEvent(AccountEvent.AcceptDocuments(it)) }
+                    onChange = { onEvent(AccountEvent.AcceptDocuments(it)) },
+                    onOpenLegal = onOpenLegal
                 )
+                if (attempted && !state.documentsAccepted) Text(stringResource(R.string.account_accept_required),
+                    style = Zapara.typography.caption, color = c.bad, modifier = Modifier.testTag("Account.AcceptError"))
             }
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                // Одна основная кнопка, всегда доступна (кроме отправки): при ошибках показывает их, а не молчит.
+                val ready = if (state.registration) state.canSubmitCredentials && confirmPassword == state.password
+                    else state.canSubmitCredentials
+                val submit = { if (ready) onEvent(AccountEvent.Submit) else attempted = true }
                 if (state.registration) {
-                    ZButton(stringResource(R.string.account_register), { onEvent(AccountEvent.Submit) },
-                        enabled = state.canSubmitCredentials && confirmPassword == state.password,
-                        tag = "Account.Register")
+                    ZButton(stringResource(R.string.account_register), submit,
+                        enabled = !state.busy && !state.externalPending, busy = state.busy, tag = "Account.Register")
                 } else {
-                    ZButton(stringResource(R.string.account_login), { onEvent(AccountEvent.Submit) }, enabled = state.canSubmitCredentials, tag = "Account.Login")
-                }
-                if (state.registrationAvailable) {
-                    ZButton(stringResource(R.string.account_mode), { onEvent(AccountEvent.ToggleRegistration) }, ghost = true, enabled = !state.busy && !state.externalPending, tag = "Account.Mode")
+                    ZButton(stringResource(R.string.account_login), submit,
+                        enabled = !state.busy && !state.externalPending, busy = state.busy, tag = "Account.Login")
                 }
             }
             if (state.showYandexLogin || state.showVkLogin) {
@@ -417,7 +437,7 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             if (state.showRecovery && state.recoveryStep == AccountRecoveryStep.Request) {
                 ZButton(stringResource(if (recoveryOpen)
                     R.string.ux30_platform_recovery_hide else R.string.ux30_platform_recovery_open),
-                    { recoveryOpen = !recoveryOpen }, ghost = true, tag = "Account.RecoveryToggle")
+                    { recoveryOpen = !recoveryOpen }, ghost = true, quiet = true, tag = "Account.RecoveryToggle") // ссылка, не кнопка
             }
             if (state.showRecovery && (recoveryOpen || state.recoveryStep == AccountRecoveryStep.Confirm)) {
                 if (state.recoveryStep == AccountRecoveryStep.Request && state.recoveryUsername.isBlank() && state.username.isNotBlank())
@@ -731,11 +751,13 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AcceptDocuments(checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun AcceptDocuments(checked: Boolean, onChange: (Boolean) -> Unit, onOpenLegal: (String) -> Unit = {}) {
     val c = Zapara.colors
     val sentence = stringResource(R.string.account_accept)
     val shape = RoundedCornerShape(Zapara.radii.chip)
+    Column(Modifier.fillMaxWidth()) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp)
             .testTag("Account.AcceptDocuments")
@@ -750,11 +772,15 @@ private fun AcceptDocuments(checked: Boolean, onChange: (Boolean) -> Unit) {
             if (checked) Icon(painterResource(R.drawable.ic_check), null, Modifier.size(14.dp), tint = c.onAccent)
         }
         Spacer(Modifier.width(12.dp))
-        Icon(painterResource(R.drawable.ic_file), null, Modifier.size(16.dp), tint = c.text2)
-        Spacer(Modifier.width(4.dp))
-        Icon(painterResource(R.drawable.ic_shield), null, Modifier.size(16.dp), tint = c.text2)
-        Spacer(Modifier.width(8.dp))
         Text(sentence, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
+    }
+    // #109 / AN-16: документы — ссылками прямо под согласием (строка-галочка остаётся целью 48 dp).
+    FlowRow(Modifier.fillMaxWidth().padding(start = 34.dp), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        ZButton(stringResource(R.string.face_agreement), { onOpenLegal("agreement") }, ghost = true, quiet = true,
+            tag = "Account.AcceptAgreement")
+        ZButton(stringResource(R.string.face_policy), { onOpenLegal("policy") }, ghost = true, quiet = true,
+            tag = "Account.AcceptPolicy")
+    }
     }
 }
 
@@ -818,7 +844,8 @@ private fun PasswordProgress(value: String) {
 
 @Composable
 private fun AccountField(value: String, label: String, tag: String, password: Boolean = false,
-    onDone: (() -> Unit)? = null, onChange: (String) -> Unit) {
+    onDone: (() -> Unit)? = null, onBlur: (() -> Unit)? = null, onChange: (String) -> Unit) {
+    var hadFocus by remember(tag) { mutableStateOf(false) }
     val c = Zapara.colors
     var passwordVisible by rememberSaveable(tag) { mutableStateOf(false) }
     LaunchedEffect(value.isEmpty()) { if (value.isEmpty()) passwordVisible = false }
@@ -827,7 +854,8 @@ private fun AccountField(value: String, label: String, tag: String, password: Bo
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        modifier = Modifier.fillMaxWidth().testTag(tag).semantics { contentDescription = label },
+        modifier = Modifier.fillMaxWidth().testTag(tag).semantics { contentDescription = label }
+            .onFocusChanged { if (it.isFocused) hadFocus = true else if (hadFocus) onBlur?.invoke() },
         textStyle = Zapara.typography.body,
         singleLine = true,
         visualTransformation = if (password && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,

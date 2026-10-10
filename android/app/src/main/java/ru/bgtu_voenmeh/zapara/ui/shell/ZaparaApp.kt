@@ -601,7 +601,7 @@ private fun ZaparaAppBody(
                                     onReturnToInbox = if (conversationId != null && s.activeConversationId == conversationId &&
                                         s.activeTopicId == null && !s.showTrusted && s.spacePanel == null) {
                                         { if (!nav.popBackStack()) nav.openSection(Section.Chat) }
-                                    } else null) { id -> nav.navigate("homework?id=$id") }
+                                    } else null, onOpenAccount = { nav.openSection(Section.Settings, "account") }) { id -> nav.navigate("homework?id=$id") }
                                 }
                             }
                             composable(Section.Settings.pattern, arguments = listOf(
