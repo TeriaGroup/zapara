@@ -23,6 +23,8 @@ data class CommunitySnapshot(
     val members: List<CommunityMember> = emptyList(),
     val staff: List<CommunityMember> = emptyList(),
     val joinRequests: List<JoinRequest> = emptyList(),
+    /** #104: имена людей по userId — из списка одногруппников (`/home`), если сообщество групповое. */
+    val people: Map<String, ru.bgtu_voenmeh.zapara.data.communities.Classmate> = emptyMap(),
     val homework: List<CommunityHomework> = emptyList(),
     val completions: Map<String, HomeworkCompletion> = emptyMap(),
     val announcements: List<CommunityAnnouncement> = emptyList(),
@@ -45,13 +47,31 @@ data class CommunityListItemUi(
     val canOpen: Boolean
 )
 
-data class CommunityPersonUi(val userId: String, val role: String)
+/** [name] — отображаемое имя или логин; null — имени нет, в UI нейтральное «Участник N». [login] — только если отличается от имени. */
+data class CommunityPersonUi(val userId: String, val role: String, val name: String? = null, val login: String? = null)
+
+/** #104 / AN-24: подпись человека в сообществе без userId. */
+object CommunityPeople {
+    data class Label(val name: String?, val login: String?)
+
+    fun label(person: ru.bgtu_voenmeh.zapara.data.communities.Classmate?): Label {
+        val display = person?.displayName?.trim().orEmpty()
+        val login = person?.username?.trim().orEmpty()
+        return when {
+            display.isNotEmpty() -> Label(display, login.takeIf { it.isNotEmpty() && !it.equals(display, ignoreCase = true) })
+            login.isNotEmpty() -> Label(login, null)
+            else -> Label(null, null)
+        }
+    }
+}
 
 data class CommunityJoinRequestUi(
     val requestId: String,
     val userId: String,
     val status: String,
-    val canResolve: Boolean
+    val canResolve: Boolean,
+    val name: String? = null,
+    val login: String? = null
 )
 
 data class CommunityHomeworkUi(
@@ -113,6 +133,9 @@ data class CommunityDetailUi(
 )
 
 object CommunitiesComposer {
+    private fun person(userId: String, role: String, snapshot: CommunitySnapshot): CommunityPersonUi =
+        CommunityPeople.label(snapshot.people[userId]).let { CommunityPersonUi(userId, role, it.name, it.login) }
+
     fun compose(snapshot: CommunitySnapshot): CommunitiesUiState {
         if (snapshot.guest) return CommunitiesUiState(CommunityPane.Guest)
         if (snapshot.failure == CommunityClientFailure.Forbidden) {
@@ -150,10 +173,12 @@ object CommunitiesComposer {
                 role = role!!,
                 canModerate = staff,
                 canPublish = staff,
-                members = snapshot.members.map { CommunityPersonUi(it.userId, it.role) },
-                staff = snapshot.staff.map { CommunityPersonUi(it.userId, it.role) },
+                members = snapshot.members.map { person(it.userId, it.role, snapshot) },
+                staff = snapshot.staff.map { person(it.userId, it.role, snapshot) },
                 joinRequests = if (staff) snapshot.joinRequests.map { request ->
-                    CommunityJoinRequestUi(request.requestId, request.userId, request.status, request.status == "pending")
+                    val label = CommunityPeople.label(snapshot.people[request.userId])
+                    CommunityJoinRequestUi(request.requestId, request.userId, request.status, request.status == "pending",
+                        label.name, label.login)
                 } else emptyList(),
                 homework = mergeHomework(snapshot),
                 announcements = mergeAnnouncements(snapshot),

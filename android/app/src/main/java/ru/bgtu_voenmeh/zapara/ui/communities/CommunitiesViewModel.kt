@@ -233,6 +233,7 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
             val members = if (staff) api.listMembers(token, communityId) else emptyList()
             val staffRows = if (staff) api.listStaff(token, communityId) else emptyList()
             val requests = if (staff) api.listJoinRequests(token, communityId) else emptyList()
+            val people = if (staff) directory(api, token, communityId) else emptyMap()
             if (ticket != openTicket) return
             if (!isCurrentScope(scope)) return
             loading = false
@@ -245,7 +246,8 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
                     polls = polls,
                     members = members,
                     staff = staffRows,
-                    joinRequests = requests
+                    joinRequests = requests,
+                    people = people
                 )
             )
         } catch (e: CancellationException) {
@@ -258,6 +260,18 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
                 loading = false; publish(snapshot.copy(failure = CommunityClientFailure.Transport))
             }
         }
+    }
+
+    /**
+     * #104: сервер в /members, /staff и /join-requests имени не отдаёт — только userId. Имена берём из /home
+     * (одногруппники), который есть у группового сообщества; у остальных запрос не удаётся — тогда «Участник N».
+     */
+    private suspend fun directory(api: CommunityHttpClient, token: String, communityId: String) = try {
+        api.groupHome(token, communityId).classmates.associateBy { it.userId }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        emptyMap()
     }
 
     private suspend fun join(communityId: String) {
