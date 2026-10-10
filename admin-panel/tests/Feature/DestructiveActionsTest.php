@@ -25,7 +25,7 @@ class DestructiveActionsTest extends TestCase
 
         $page = Livewire::test(Memberships::class)
             ->assertSee('Мария Петрова ('.$member->username.') → '.$group)
-            ->assertSee('Заявка 9 октября, 18:40 МСК')
+            ->assertSee('Заявка 9 окт., 18:40 МСК')
             ->assertSee('Скопировать ID');
         $this->assertStringNotContainsString($communityId, strip_tags((string) $page->html()));
         $this->assertStringNotContainsString('>'.$requestId.'<', (string) $page->html());
