@@ -254,6 +254,14 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             HasPassword = false;
             ExportJob = null; ExportPayload = null; ExportPath = null; ExportFileName = null; AuthorizeUrl = null;
         }
+        // #148: успешный переход (восстановление профиля, выход, новый вход) отменяет сбой формы — иначе устаревшая
+        // ошибка, скрытая вместе с формой, всплыла бы при следующем показе формы (после выхода или «войдите снова»).
+        if (value.Failure is null && value.AccountFailure is null && (snapshot is null || snapshot.Failure is not null
+                || snapshot.AccountFailure is not null || snapshot.Phase != value.Phase || snapshot.Identity != value.Identity))
+        {
+            FormError = "";
+            formSnapshot = null;
+        }
         snapshot = value;
         if (value.ReauthRequired) Avatar = null;
         Status = value.Phase == ProfilePhase.RecoveryRequired ? T("accountRecovery")

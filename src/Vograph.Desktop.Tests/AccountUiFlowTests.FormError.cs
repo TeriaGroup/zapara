@@ -109,5 +109,26 @@ public sealed partial class AccountUiFlowTests
         Assert.Equal(Vograph.Desktop.Services.Loc.Current.T("accountFailed"), f.Vm.Status);
     }
 
+    [Fact]
+    public async Task Successful_recovery_clears_the_hidden_transition_failure()
+    {
+        // Вход принят, но публикация профиля упала → RecoveryRequired, «переход не удался» в слоте формы (форма скрыта).
+        // Восстановление проходит — устаревшая ошибка не должна всплыть потом, когда форма снова покажется.
+        var fail = true;
+        await using var h = new ProfileHarness(publish: _ => { if (fail) throw new InvalidOperationException("synthetic UI fault"); });
+        using var vm = new Vograph.Desktop.Features.Account.AccountPanelViewModel(h.Coordinator,
+            new Vograph.Desktop.Services.Accounts.AccountUiService(h.Client, h.Vault, h.Coordinator));
+        await vm.InitializeAsync();
+        vm.Username = "Test.User"; vm.Password = Password;
+        await vm.SubmitCommand.ExecuteAsync(null);
+        Assert.True(vm.NeedsRecovery);
+        Assert.Equal(Vograph.Desktop.Services.Loc.Current.T("accountTransitionFailed"), vm.FormError);
+        fail = false;
+        await vm.RecoverCommand.ExecuteAsync(null);
+        Assert.False(vm.NeedsRecovery);
+        Assert.Equal("", vm.FormError);
+        Assert.False(vm.HasFormError);
+    }
+
     private static string FindRepoFile(string relative) => Path.Combine(ResourceKeysTests.RepoRoot(), relative);
 }
