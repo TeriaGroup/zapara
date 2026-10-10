@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Communities\RelationManagers;
 
+use App\Filament\Support\MoscowTime;
 use App\Filament\Resources\Communities\CommunityResource;
 use App\Filament\Support\OperatorActions;
 use App\Models\StaffAssignment;
@@ -53,7 +54,7 @@ class StaffRelationManager extends RelationManager
                     ->color(fn (string $state): string => $state === 'headman' ? 'info' : 'success'),
                 TextColumn::make('assigned_at')
                     ->label('Назначен (МСК)')
-                    ->dateTime('j M Y, H:i', 'Europe/Moscow')
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state)) // G-3: «9 окт., 18:49», год — если не текущий
                     ->visibleFrom('md'),
             ])
             ->defaultSort('assigned_at', 'desc')

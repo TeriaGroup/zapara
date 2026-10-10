@@ -7,14 +7,14 @@ namespace Vograph.Core.Services;
 
 public class Database : IDisposable
 {
-    private readonly SqliteConnection _conn;
+    private readonly GuardedSqliteConnection _conn;
 
     public Database(string dbPath)
     {
         var dir = Path.GetDirectoryName(dbPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             Directory.CreateDirectory(dir);
-        _conn = new SqliteConnection($"Data Source={dbPath}");
+        _conn = new GuardedSqliteConnection($"Data Source={dbPath}");
         try
         {
             _conn.Open();
@@ -614,8 +614,10 @@ VALUES (@gid,@dow,@par,@idx,@ts,@te,@sub,@norm,@teach,@room,@build,@type,@cls,@r
         return new Group { Id = r.GetString(0), Name = r.GetString(1), Url = r.IsDBNull(2) ? "" : r.GetString(2), LastFetchedAt = r.IsDBNull(3) ? null : DateTime.TryParse(r.GetString(3), out var dt) ? dt : null };
     }
 
-    public void Dispose()
-    {
-        _conn.Dispose();
-    }
+    /// <summary>#130: stops new commands, waits for the ones in flight on other threads and only then closes the
+    /// connection (see <see cref="GuardedSqliteConnection"/>). Returns false if a command outlived
+    /// <paramref name="wait"/>; the connection then closes as soon as that command is disposed.</summary>
+    public bool Shutdown(TimeSpan wait) => _conn.Shutdown(wait);
+
+    public void Dispose() => _conn.Dispose();
 }
