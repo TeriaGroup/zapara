@@ -93,6 +93,7 @@ import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, Gro
 
 import { PageHead as Head } from "./page-head";
 import { S, subjectText, subjectShort, teacherText, roomText, metaLine, typeLabel as lessonTypeLabel, lessonKindOf, formatDateTime, formatRange } from "./schedule-text";
+import { groupContextExpanded, groupContextToggleLabel, groupSubtitle } from "./group-panel";
 
 // Тип пары и подписи — из общего каталога (#12): design/strings/ru.json → strings.gen.ts.
 function TypeChip({ type }: { type: string }) {
@@ -1501,7 +1502,7 @@ function GroupContent() {
   const hasOlder = logState.key === viewKey && logState.hasOlder;
   const [messageFilter, setMessageFilter] = useState<MessageBrowseFilter>(defaultMessageFilter);
   const [messageBrowseOpen, setMessageBrowseOpen] = useState(false);
-  const [contextExpandedByGroup, setContextExpandedByGroup] = useState<Record<string, boolean>>({});
+  const [contextExpandedByGroup, setContextExpandedByGroup] = useBrowseValue<Record<string, boolean>>("group-context-expanded", {});
   const [obligationTarget,setObligationTarget]=useState<Obligation|null>(null);
   const [globalBoardOpen,setGlobalBoardOpen]=useState(false);
   const visibleLog = filterMessages(log, messageFilter, app.session?.user?.userId || "");
@@ -1758,7 +1759,7 @@ function GroupContent() {
     topics: topicPage?.topics ?? [],
     now,
   });
-  const contextExpanded = contextExpandedByGroup[communityId] ?? !compact;
+  const contextExpanded = groupContextExpanded(contextExpandedByGroup, communityId); // #17: одинаково на desktop и телефоне
   const activeBallotTopic = topicPage?.topics.find(topic => topic.topicId !== null && topic.kind === "ballots" && topic.activeBallots > 0);
   const nextUnread = chat?.kind === "group" && thread !== "list" && topicPage
     ? nextUnreadTopic(topicPage.topics, thread.topicId) : null;
@@ -1993,7 +1994,7 @@ function GroupContent() {
   if (!app.session?.authenticated) return <section className="page group-page"><Head title="Группа"/><div className="card empty"><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p><Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link></div></section>;
   return (
     <section className={`page group-page group-pane-${mobilePane}${home ? " group-workspace" : ""}${focusChat ? " group-chat-focused" : ""}`}>
-      <Head title={chat && chat.kind !== "group" ? chat.title : "Группа"} text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : "Одногруппники и чат"}>
+      <Head title={chat && chat.kind !== "group" ? chat.title : "Группа"} text={home ? groupSubtitle(home.name, home.groupName) : "Одногруппники и чат"}>
         {home && (chat && chat.kind !== "group" ? <Avatar kind="user" id={chat.peerUserId} name={chat.title} /> : <Avatar kind="group" id={home.communityId} name={home.groupName || home.name} />)}
         {home && !compact && <button className="btn" type="button" aria-expanded={mobileDetailsOpen} onClick={() => setMobileDetailsOpen(true)}>Сведения и действия группы</button>}
       </Head>
@@ -2124,7 +2125,7 @@ function GroupContent() {
                 <b>В группе сейчас</b>
                 <button className="btn" type="button" aria-expanded={contextExpanded}
                   onClick={() => setContextExpandedByGroup(current => ({ ...current, [communityId]: !contextExpanded }))}>
-                  {contextExpanded ? "Свернуть" : "Развернуть"}
+                  {groupContextToggleLabel(contextExpanded)}
                 </button>
               </div>
               {contextExpanded ? <div className="group-context-items">
