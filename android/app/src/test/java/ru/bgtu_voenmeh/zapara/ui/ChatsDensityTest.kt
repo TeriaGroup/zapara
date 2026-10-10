@@ -56,7 +56,7 @@ class ChatsDensityTest {
         assertTrue(ShellLogic.showBottomBar(Section.Schedule, conversationOpen = true))
         assertTrue(src("inbox/InboxSection.kt").contains("ReportConversationOpen(state.active != null)"))
         assertTrue(src("groups/GroupSection.kt").contains("ReportConversationOpen(conversation)"))
-        assertTrue(src("shell/ZaparaApp.kt").contains("if (ShellLogic.showBottomBar(current, conversationOpen)) ZBottomBar("))
+        assertTrue(src("shell/ZaparaApp.kt").contains("if (ShellLogic.showBottomBar(current, conversation.open)) ZBottomBar("))
     }
 
     @Test fun group_conversation_lights_the_chats_tab() {
@@ -69,5 +69,24 @@ class ChatsDensityTest {
         assertTrue(s.contains("horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start"))
         val time = s.substring(s.indexOf("R.string.face_read else R.string.face_sent"), s.indexOf("Inbox.MessageTime."))
         assertFalse("weight(1f) растягивал пузырь на всю ширину", time.contains("weight(1f)"))
+    }
+
+    @Test fun a_replaced_screen_cannot_reset_the_flag_of_the_screen_that_replaced_it() {
+        val state = ru.bgtu_voenmeh.zapara.ui.shell.ConversationOpenState()
+        val first = Any(); val second = Any()
+        assertFalse(state.open)
+        state.report(first, true)
+        // NavHost: новая беседа сообщает о себе раньше, чем старая успевает уйти из композиции
+        state.report(second, true)
+        state.report(first, false)
+        assertTrue("dispose старого экрана не сбрасывает флаг нового", state.open)
+        state.report(second, true)  // повтор — без дублей
+        state.report(second, false)
+        assertFalse(state.open)
+        state.report(first, false)  // повторный dispose — не ломает
+        assertFalse(state.open)
+        val chrome = src("shell/ConversationChrome.kt")
+        assertTrue(chrome.contains("val owner = remember { Any() }"))
+        assertTrue(chrome.contains("onDispose { state.report(owner, false) }"))
     }
 }
