@@ -147,7 +147,7 @@ public class PageFrameTests : UiTest
         var vm = (HomeworkViewModel)shell.Current!;
         await Waits.Until(() => vm.Groups.Count > 0, "homework loaded");
         Pump();
-        Assert.Matches(@"^Открыто: \d+ · Сдано: \d+$", vm.Counter);
+        Assert.Matches(@"^Открыто: \d+ · Выполнено: \d+$", vm.Counter);
 
         var buttons = window.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToList();
         Assert.DoesNotContain(buttons, b => b.Content is "Сохранить сроки в календарь" or "Предпросмотр текущего списка" or "Выбрать несколько" or "Раскрыть все разделы");

@@ -79,7 +79,7 @@ public sealed class ScheduleComposer
             {
                 var (next, nextDate) = _app.Maps.GetNextLesson(groupId, date.AddDays(1));
                 if (next is not null)
-                { nextStudyDate = nextDate; hint = loc.T("nextLessonHint", loc.I18n.FormatDayFull(nextDate).ToLowerInvariant(), next.TimeStart); }
+                { nextStudyDate = nextDate; hint = loc.T("nextLessonHint", LessonText.ShortDate(nextDate), next.TimeStart); /* G-3: «Следующая пара: пн, 12 окт., 10:50» */ }
             }
             return new DayModel(date, offset, title, subtitle, Array.Empty<LessonRow>(), loc.T(isSunday ? "noLessonsSunday" : "noLessonsDay"), hint, NextStudyDate: nextStudyDate);
         }
