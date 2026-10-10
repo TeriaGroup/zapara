@@ -89,6 +89,10 @@ public sealed partial class AccountUiFlowTests
         Assert.Contains("Неверный логин или пароль", f.Vm.FormError);
         Assert.DoesNotContain("Неверный", f.Vm.Status);
         Assert.False(string.IsNullOrWhiteSpace(f.Vm.Status));
+        // #153: повторный вход отклонён — режим повторного входа сохраняется, форма с ошибкой видна, можно повторить сразу.
+        Assert.True(f.Vm.ShowLogin);
+        Assert.True(f.Vm.ShowLoginForm);
+        Assert.Equal(Vograph.Desktop.Services.Loc.Current.T("accountReauth"), f.Vm.Status);
         f.Vm.Username = "Test.User2";
         Assert.Equal("", f.Vm.FormError);
         Assert.DoesNotContain("Неверный", f.Vm.Status);

@@ -186,6 +186,12 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     }
     [ObservableProperty] private bool documentsAccepted;
 
+    // Согласие принято — снимаем именно ошибку «примите соглашение»; другие ошибки формы остаются.
+    partial void OnDocumentsAcceptedChanged(bool value)
+    {
+        if (value && FormError == T("accountAcceptRequired")) FormError = "";
+    }
+
     partial void OnRegistrationChanged(bool value)
     {
         FormError = "";
@@ -215,13 +221,24 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     /// <summary>#148: применить результат входа/регистрации из формы: сбой — в слот ошибки формы, строка состояния нейтральна.</summary>
     private void ApplyForm(ProfileSnapshot value)
     {
-        formSnapshot = value.AccountFailure is null ? null : value;
+        var failed = value.AccountFailure is not null || value.Failure is not null;
+        // Повторный вход после «нужно войти снова» отклонён: признак повторного входа знает только этот снимок
+        // (RefreshRemoteAsync не меняет снимок координатора), поэтому сохраняем его — иначе форма с ошибкой скроется.
+        if (failed && snapshot is { ReauthRequired: true } current && !value.ReauthRequired && value.Identity == current.Identity)
+            value = value with { ReauthRequired = true };
+        formSnapshot = failed ? value : null;
         Apply(value);
+        // Сбой входа (неверный пароль) и сбой переключения профиля после принятого входа — оба в слот формы.
         if (value.AccountFailure is { } failure) FormError = FailureText(failure);
+        else if (value.Failure is not null) FormError = T("accountTransitionFailed");
     }
 
     private string NeutralStatus(ProfileSnapshot value) =>
         value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
+
+    /// <summary>Строка состояния без сбоя: после ошибки формы подзаголовок не должен держать «Войти с VK ID…» и т. п.</summary>
+    private string RestingStatus() => snapshot is null ? Status
+        : snapshot.Phase == ProfilePhase.RecoveryRequired ? T("accountRecovery") : NeutralStatus(snapshot);
 
     private void Apply(ProfileSnapshot value)
     {
@@ -244,7 +261,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             // состояния (её повторяет подзаголовок «Аккаунт» в настройках) нейтральна. Сбои запуска и восстановления
             // (например, чтение хранилища сеанса) по-прежнему видны в строке состояния.
             : value.AccountFailure is { } failure ? (value.Equals(formSnapshot) ? NeutralStatus(value) : FailureText(failure))
-            : value.Failure is not null ? T("accountTransitionFailed")
+            : value.Failure is not null ? (value.Equals(formSnapshot) ? NeutralStatus(value) : T("accountTransitionFailed"))
             : value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
         foreach (var name in new[] { nameof(IsGuest), nameof(IsAccount), nameof(CanAct), nameof(NeedsRecovery), nameof(ShowLogin), nameof(ShowLoginForm) })
             OnPropertyChanged(name);
@@ -403,7 +420,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         finally { ClearSecrets(); Busy = false; }
         bool IsCurrent() => !disposed && profiles?.Snapshot.Identity == expected;
         // #148: ошибки формы входа/регистрации — в FormError, остальные операции — в строку состояния, как раньше.
-        void Fail(string text) { if (form) FormError = text; else Status = text; }
+        void Fail(string text) { if (form) { FormError = text; Status = RestingStatus(); } else Status = text; }
     }
 
     private string FailureText(AccountClientFailure failure) => T(failure switch
