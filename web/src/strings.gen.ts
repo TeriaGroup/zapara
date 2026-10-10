@@ -1,5 +1,6 @@
 // Сгенерировано scripts/design/strings.mjs из design/strings/ru.json — не править вручную.
 export const S = {
+  "groupChat": "Чат группы",
   "productName": "Расписание военмех",
   "scheduleTitle": "Расписание",
   "parityOdd": "нечётная",
