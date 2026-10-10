@@ -57,6 +57,13 @@ class MapFocusTest {
             .contains("Аудитории %1\$s нет на плане этого этажа"))
     }
 
+    @Test fun missing_room_note_is_shown_without_route_steps_too() {
+        val section = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/MapsSection.kt").readText()
+        assertTrue(section.contains("if (!state.alphaMaps && !state.remote && !state.showStack && state.roomUnmarked)"))
+        assertTrue(section.contains(".testTag(\"Maps.RoomNotOnPlan\")"))
+        assertTrue(section.contains("RoomNotOnPlan(state, Modifier.testTag(\"Maps.RouteUnmarked\"))"))
+    }
+
     @Test fun web_auto_zoom_stays_off() {
         val web = File("../../web/src/map-labels.ts")
         if (web.exists()) assertTrue("web: autoZoomNextRoom = false",
