@@ -46,6 +46,14 @@ class SignInTest {
         val accept = account.substringAfter("private fun AcceptDocuments(").substringBefore("\n@Composable")
         assertTrue(accept.contains("heightIn(min = 48.dp)"))
         assertTrue(accept.contains("tag = \"Account.AcceptAgreement\"") && accept.contains("tag = \"Account.AcceptPolicy\""))
+        // Ссылки, а не кнопки: подчёркнутый текст, цель 48 dp.
+        assertTrue(accept.contains("DocLink(stringResource(R.string.face_agreement), tag = \"Account.AcceptAgreement\")"))
+        assertFalse(accept.contains("ZButton(stringResource(R.string.face_agreement)"))
+        val link = account.substring(account.indexOf("private fun DocLink("), account.indexOf("private fun DocLink(") + 600)
+        assertTrue(link.contains("TextDecoration.Underline") && link.contains("heightIn(min = 48.dp)"))
+        // «Осталось N символов» — не warn.
+        val progress = account.substring(account.indexOf("private fun PasswordProgress("), account.indexOf("private fun AccountField("))
+        assertTrue(progress.contains("count < 12 && !value.contains('\\u0000') -> Zapara.colors.text2"))
         assertTrue(account.contains("ghost = true, quiet = true, tag = \"Account.RecoveryToggle\""))
     }
 }

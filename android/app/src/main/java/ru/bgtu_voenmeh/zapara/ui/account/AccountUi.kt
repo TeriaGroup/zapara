@@ -776,11 +776,22 @@ private fun AcceptDocuments(checked: Boolean, onChange: (Boolean) -> Unit, onOpe
     }
     // #109 / AN-16: документы — ссылками прямо под согласием (строка-галочка остаётся целью 48 dp).
     FlowRow(Modifier.fillMaxWidth().padding(start = 34.dp), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        ZButton(stringResource(R.string.face_agreement), { onOpenLegal("agreement") }, ghost = true, quiet = true,
-            tag = "Account.AcceptAgreement")
-        ZButton(stringResource(R.string.face_policy), { onOpenLegal("policy") }, ghost = true, quiet = true,
-            tag = "Account.AcceptPolicy")
+        DocLink(stringResource(R.string.face_agreement), tag = "Account.AcceptAgreement") { onOpenLegal("agreement") }
+        DocLink(stringResource(R.string.face_policy), tag = "Account.AcceptPolicy") { onOpenLegal("policy") }
     }
+    }
+}
+
+/** #109 / AN-16: ссылка на документ — подчёркнутый текст слева, цель 48 dp; не кнопка по центру. */
+@Composable
+private fun DocLink(label: String, tag: String, onClick: () -> Unit) {
+    Box(
+        Modifier.heightIn(min = 48.dp).testTag(tag)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(label, style = Zapara.typography.body.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+            color = Zapara.colors.text1)
     }
 }
 
@@ -838,8 +849,12 @@ private fun PasswordProgress(value: String) {
         else -> stringResource(R.string.ux300_android_password_length_ok)
     }
     Text(label, style = Zapara.typography.caption,
-        color = if (count in 12..128 && !value.contains('\u0000')) Zapara.colors.ok
-            else Zapara.colors.warn)
+        // #109: «осталось N символов» — подсказка по ходу ввода, нейтральным цветом; warn — только для ошибки.
+        color = when {
+            count in 12..128 && !value.contains('\u0000') -> Zapara.colors.ok
+            count < 12 && !value.contains('\u0000') -> Zapara.colors.text2
+            else -> Zapara.colors.warn
+        })
 }
 
 @Composable
