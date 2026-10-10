@@ -19,6 +19,7 @@ class SignInTest {
         assertTrue(src("groups/GroupSection.kt").contains("SignedOutState(R.drawable.ic_users,"))
         assertEquals("Войти", XmlCopy.get("account_login"))
         assertTrue(XmlCopy.get("signed_out_chats_hint").contains("без аккаунта"))
+        assertTrue(XmlCopy.get("signed_out_chats_hint").startsWith("Чат группы и личные чаты — после входа."))
         assertTrue(XmlCopy.get("signed_out_communities_hint").contains("без аккаунта"))
     }
 
