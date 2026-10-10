@@ -7,9 +7,7 @@ public static class UpdateChannelStore
     public const string PublicRepo = "zapara-releases";
     public const string AlphaRepo = "zapara";
 
-    public static string FilePath { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Vograph", "update-source.txt");
+    public static string FilePath { get; set; } = Path.Combine(VographDataRoot.DefaultDir, "update-source.txt");
 
     public readonly record struct Choice(bool Alpha, string Token)
     {
