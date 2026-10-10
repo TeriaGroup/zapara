@@ -37,7 +37,8 @@ test("files compiled by stubbed UI tests inline the same wording", async () => {
   const { readFile } = await import("node:fs/promises");
   const read = (name: string) => readFile(new URL(`./${name}`, import.meta.url), "utf8");
   const [pages, topics, people, composer, chat] = await Promise.all(["pages.tsx", "topics.tsx", "people.tsx", "group-composer.tsx", "chat.tsx"].map(read));
-  assert.ok(pages.includes('[ ["general","Чат"], ["channels","Каналы"], ["people","Участники"] ]'));
+  // r2: вкладки и «Чат» в pages.tsx — из groupTabs/channelTitle (каталог), review-regressions подставляет ./chat-ui.
+  assert.ok(pages.includes("{groupTabs.map(") && pages.includes('import { channelTitle, groupTabs } from "./chat-ui";'));
   assert.ok(!/>Все разделы</.test(pages) && !/"Состав"|"Общее"\]/.test(pages));
   assert.ok(topics.includes('topic.topicId === null ? "Чат" : topic.title'));
   for (const label of [composerLabels.attach, composerLabels.circle, composerLabels.voice]) assert.ok(people.includes(`title="${label}"`), label);
