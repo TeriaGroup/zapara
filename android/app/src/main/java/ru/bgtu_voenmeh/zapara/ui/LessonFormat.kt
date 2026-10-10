@@ -71,6 +71,10 @@ object LessonFormat {
         return copy.get("schedule_caption", weekdayFull(date), monthDay(date), parity, weekNumber)
     }
 
+    /** #108 / AN-23: «Чётная, 6-я неделя» — с заглавной и без повтора «неделя · …неделя». */
+    fun weekLine(odd: Boolean, weekNumber: Int, copy: UiCopy): String =
+        copy.get("schedule_week_line", copy.get(if (odd) "week_odd" else "week_even"), weekNumber)
+
     fun nextHint(date: LocalDate, name: String, copy: UiCopy): String =
         copy.get("next_lesson_hint", monthDay(date), name)
 

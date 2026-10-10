@@ -174,7 +174,8 @@ private fun ZaparaAppBody(
             }
         }
         val chip = state.groupName?.let { ShellLogic.chip(it, state.odd, container.copy) }
-        val chrome = ShellChrome(chip, state.stale, state.hasGroup) {
+        val chipShort = state.groupName?.let { ShellLogic.chipShort(it, state.odd, container.copy) }
+        val chrome = ShellChrome(chip, state.stale, state.hasGroup, chipShort) {
             shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.GroupPicker))
         }
         val themeDesc = if (Zapara.colors.isDark) stringResource(R.string.theme_dark) else stringResource(R.string.theme_light)

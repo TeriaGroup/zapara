@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.width
@@ -242,7 +243,7 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
     onOpenMap: (String) -> Unit, onDiscuss: (String) -> Unit,
@@ -260,18 +261,30 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
         else page.lessons.indexOfFirst { row -> ru.bgtu_voenmeh.zapara.ui.week.academicLessonKey(row.index,
             row.timeStart, row.timeEnd, row.subjectRaw, row.teacher, row.classroomRaw, row.typeRaw) == academicKey }
     }
-    var remainingOnly by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
+    // #108 / AN-08: прошедшие пары сегодня свёрнуты по умолчанию; одна строка в списке их показывает.
+    val pastCount = if (page.isToday) page.lessons.count { it.isPast } else 0
+    var remainingOnly by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(pastCount > 0) }
+    val live = if (page.isToday) TodayHero.live(page.lessons, state.now.toLocalTime()) else null
     var dayToolsOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
     var transfersOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
     val visibleIndices = page.lessons.indices.filter { !remainingOnly || !page.isToday || !page.lessons[it].isPast }
     LaunchedEffect(page.date, focusIndex) {
-        if (focusIndex >= 0) { remainingOnly = false; list.animateScrollToItem(focusIndex + 1) }
+        if (focusIndex >= 0) { remainingOnly = false; list.animateScrollToItem(ScheduleListIndex.lesson(focusIndex, nowHeader = live != null)) }
     }
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        // #108 / AN-08: закреплённый блок «Сейчас · Физика · 229 ГК · до 12:20» (рамка lineStrong), открывает лист пары.
+        if (live != null) stickyHeader(key = "Schedule.NowHero") {
+            Box(Modifier.fillMaxWidth().background(Zapara.colors.canvas).padding(bottom = Zapara.space.xs)) {
+                ZCard(Modifier.fillMaxWidth().border(1.dp, Zapara.colors.lineStrong, RoundedCornerShape(Zapara.radii.card)),
+                    onClick = { onEvent(ScheduleEvent.LongPress(live)) }, tag = "Schedule.NowHero") {
+                    Text(TodayHero.line(live) { id, args -> uiText(id, *args) }, style = Zapara.typography.bodyStrong, color = Zapara.colors.text1)
+                }
+            }
+        }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             state.sourceStatus?.let { Text(it, style = Zapara.typography.caption, color = Zapara.colors.text2) }
-            Text(page.caption.substringAfter(" · ", page.caption), style = Zapara.typography.caption, color = Zapara.colors.text2)
+            Text(page.weekLine.ifBlank { page.caption.substringAfter(" · ", page.caption) }, style = Zapara.typography.caption, color = Zapara.colors.text2)
             if (page.dataState != null) Text(page.dataState, style = Zapara.typography.body, color = Zapara.colors.text2)
             else if (page.lessons.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 Text(pluralStringResource(R.plurals.schedule_pair_count, page.lessons.size, page.lessons.size), modifier = Modifier.align(Alignment.CenterVertically), style = Zapara.typography.section, color = Zapara.colors.text1)
@@ -314,26 +327,16 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                     }
                 }
             }
-            if (page.isToday && page.lessons.any { it.isPast }) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
-                    verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                ZButton(stringResource(if (remainingOnly) R.string.ux300_ext_all_day else R.string.ux300_ext_remaining_only),
-                    { remainingOnly = !remainingOnly }, modifier = Modifier.fillMaxWidth(), ghost = true,
-                    tag = "Schedule.RemainingOnly", startAligned = true, leadingIcon = R.drawable.ic_calendar)
-                if (remainingOnly && visibleIndices.isEmpty()) Text(stringResource(R.string.ux300_ext_remaining_empty),
-                    style = Zapara.typography.body)
-                }
-            }
             if (page.deadlines.isNotEmpty() || featured != null) BoxWithConstraints(
                 Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).padding(top = Zapara.space.s, bottom = Zapara.space.m)) {
                 @Composable fun lessonShortcut(modifier: Modifier) {
                 if (featured != null) ZButton(stringResource(R.string.schedule_day_jump_lesson), {
-                    scrollScope.launch { list.animateScrollToItem(visibleIndices.indexOf(page.lessons.indexOf(featured)).coerceAtLeast(0) + 1) }
+                    scrollScope.launch { list.animateScrollToItem(ScheduleListIndex.lesson(visibleIndices.indexOf(page.lessons.indexOf(featured)).coerceAtLeast(0), nowHeader = live != null)) }
                 }, modifier = modifier, ghost = true, tag = "Schedule.JumpCurrent")
                 }
                 @Composable fun deadlineShortcut(modifier: Modifier) {
                 if (page.deadlines.isNotEmpty()) ZButton(stringResource(R.string.schedule_day_jump_deadlines), {
-                    scrollScope.launch { list.animateScrollToItem(visibleIndices.size + 1) }
+                    scrollScope.launch { list.animateScrollToItem(ScheduleListIndex.lesson(visibleIndices.size, nowHeader = live != null)) }
                 }, modifier = modifier, ghost = true, tag = "Schedule.JumpDeadlines")
                 }
                 if (maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.5f) {
@@ -364,6 +367,10 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                 }
             }
             if (page.isToday && page.lessons.isNotEmpty() && featured == null) Text(uiText(R.string.space_day_15), style = Zapara.typography.body)
+            if (pastCount > 0) ZButton(
+                if (remainingOnly) stringResource(R.string.schedule_show_past, pastCount) else stringResource(R.string.schedule_hide_past),
+                { remainingOnly = !remainingOnly }, modifier = Modifier.fillMaxWidth(), ghost = true, quiet = true,
+                tag = "Schedule.RemainingOnly", startAligned = true, leadingIcon = R.drawable.ic_chevron_right)
             if (conflictPairs.isNotEmpty()) ZCard(Modifier.fillMaxWidth(), tag = "Schedule.Conflicts") {
                 Text(stringResource(R.string.uxnext_conflict_title, conflictPairs.size),
                     style = Zapara.typography.bodyStrong, color = Zapara.colors.text1) // #109 / AN-11: не warn-текст
@@ -375,7 +382,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                         second.timeStart, second.timeEnd, second.name),
                         style = Zapara.typography.caption, color = Zapara.colors.text1)
                     ZButton(stringResource(R.string.uxnext_conflict_jump),
-                        { remainingOnly = false; scrollScope.launch { list.animateScrollToItem(firstIndex + 1) } },
+                        { remainingOnly = false; scrollScope.launch { list.animateScrollToItem(ScheduleListIndex.lesson(firstIndex, nowHeader = live != null)) } },
                         ghost = true, tag = "Schedule.ConflictJump.$firstIndex.$secondIndex")
                 }
             }
@@ -494,4 +501,12 @@ private fun DeadlineRow(row: HomeworkRowUi, state: ScheduleUiState, onEvent: (Sc
             if (row.done) Text(uiText(R.string.space_day_25), style = Zapara.typography.caption)
         }
     }
+}
+
+/**
+ * #108: позиция пары в LazyColumn «Сегодня». Перед парами — блок дня (1 элемент), а если показан
+ * закреплённый «Сейчас» (stickyHeader) — ещё один. Все переходы к паре и к срокам считают отсюда.
+ */
+object ScheduleListIndex {
+    fun lesson(position: Int, nowHeader: Boolean): Int = position + if (nowHeader) 2 else 1
 }
