@@ -344,6 +344,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-provider: basic
+          # TEMP (#134 review): write the cache from this PR once to check that it is saved; reverted next commit.
+          cache-read-only: false
 
       - name: Android SDK (no sudo, into RUNNER_TEMP)
         run: |
@@ -382,5 +384,7 @@ jobs:
       - name: Clean up
         if: always()
         run: |
-          rm -rf "$ANDROID_HOME" "$GRADLE_USER_HOME"
+          # GRADLE_USER_HOME stays: setup-gradle saves it to the cache in its post step, after this one.
+          # RUNNER_TEMP (and with it the Gradle home) is wiped by the runner when the job ends.
+          rm -rf "$ANDROID_HOME"
           git reset --hard -q && git clean -ffdxq
