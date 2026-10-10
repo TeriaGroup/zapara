@@ -60,6 +60,6 @@ test("r2: at 200% zoom (720×450) the bottom nav is compact and pages reserve it
   assert.doesNotMatch(narrow, /display: none/); // подпись остаётся доступным именем
   const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
   const nav = app.slice(app.indexOf('<nav className="bottom"'), app.indexOf("</nav>", app.indexOf('<nav className="bottom"')));
-  for (const label of ["Расписание", "Карты", "Домашка", "Чат", "Разделы"]) assert.ok(nav.includes(`<span className="bottom-label">${label}</span>`), label);
+  for (const label of ["Расписание", "Карты", "Домашка", "Чаты", "Разделы"]) assert.ok(nav.includes(`<span className="bottom-label">${label}</span>`), label);
   assert.ok(app.includes("bottomNavReserve(node.getBoundingClientRect().height)") && !app.includes("Math.max(64,"));
 });

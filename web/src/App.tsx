@@ -127,7 +127,7 @@ function Shell() {
           <NavLink to="/schedule" className={selectedTab === "schedule" ? "active" : ""}><Icon name="calendar" /><span className="bottom-label">Расписание</span></NavLink>
           <NavLink to="/maps" className={selectedTab === "maps" ? "active" : ""}><Icon name="map" /><span className="bottom-label">Карты</span></NavLink>
           <NavLink to="/homework" className={selectedTab === "homework" ? "active" : ""}><Icon name="homework" /><span className="bottom-label">Домашка</span></NavLink>
-          <NavLink to="/chat" className={selectedTab === "chat" ? "active" : ""} aria-current={selectedTab === "chat" ? "page" : undefined}><Icon name="chat" /><span className="bottom-label">Чат</span></NavLink>
+          <NavLink to="/chat" className={selectedTab === "chat" ? "active" : ""} aria-current={selectedTab === "chat" ? "page" : undefined}><Icon name="chat" /><span className="bottom-label">Чаты</span></NavLink>
           <button type="button" className={menu ? "active" : ""} aria-expanded={menu} aria-controls={menu ? "sections-menu" : undefined} onClick={() => { setMenuQuery(""); setMenu(true); }}><Icon name="menu" /><span className="bottom-label">Разделы</span></button>
         </nav>
       </div>
