@@ -41,3 +41,25 @@ test("missing group or invalid period does not invent parity", () => {
   assert.equal(studyGroupCaption("Н162С", { start: "2026-09-01", weekCount: 0 }, now, false), "Н162С");
   assert.equal(studyGroupCaption("Н162С", { start: "2026-09-01", weekCount: 2 }, new Date(NaN), false), "Н162С");
 });
+
+test("r2: at 200% zoom (720×450) the bottom nav is compact and pages reserve its real height", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { bottomNavReserve } = await import("./mobile-navigation.ts");
+  assert.equal(bottomNavReserve(44.4), 45);   // компактная панель — без прежнего минимума 64px
+  assert.equal(bottomNavReserve(65), 65);
+  assert.equal(bottomNavReserve(0), 64);      // скрыта/не измерена — прежний запас
+  assert.equal(bottomNavReserve(Number.NaN), 64);
+  const css = await readFile(new URL("./mobile-shell.css", import.meta.url), "utf8");
+  const block = (q: string) => { const i = css.indexOf(q); assert.ok(i >= 0, q); return css.slice(i, css.indexOf("\n}\n", i)); };
+  const short = block("@media (max-width: 959px) and (max-height: 500px)");
+  assert.match(short, /\.bottom a, \.bottom button \{[^}]*min-height: 44px;[^}]*flex-direction: row;/);
+  // 44px из 450px ≈ 9.8% высоты (было 65px ≈ 14%), касание не меньше 44px.
+  assert.ok(44 / 450 < 0.1);
+  const narrow = block("@media (max-width: 559px) and (max-height: 500px)");
+  assert.match(narrow, /\.bottom \.bottom-label \{[^}]*clip: rect\(0, 0, 0, 0\)/);
+  assert.doesNotMatch(narrow, /display: none/); // подпись остаётся доступным именем
+  const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+  const nav = app.slice(app.indexOf('<nav className="bottom"'), app.indexOf("</nav>", app.indexOf('<nav className="bottom"')));
+  for (const label of ["Расписание", "Карты", "Домашка", "Чат", "Разделы"]) assert.ok(nav.includes(`<span className="bottom-label">${label}</span>`), label);
+  assert.ok(app.includes("bottomNavReserve(node.getBoundingClientRect().height)") && !app.includes("Math.max(64,"));
+});

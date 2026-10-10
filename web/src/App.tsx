@@ -12,7 +12,7 @@ import { PersonalComposerProvider } from "./personal-composer-context";
 import { noteSearch } from "./ux300";
 import { SearchField, useRoutePosition, focusRouteHeading, useClock } from "./ux300-controls";
 import { MobileChromeContext, useCompactLayout, useMobileKeyboard } from "./mobile-chrome";
-import { showGroupChip, mobileTabForPath, studyGroupCaption } from "./mobile-navigation";
+import { bottomNavReserve, showGroupChip, mobileTabForPath, studyGroupCaption } from "./mobile-navigation";
 import { PageHead } from "./page-head";
 import { S } from "./strings.gen";
 
@@ -59,7 +59,7 @@ function Shell() {
   useLayoutEffect(() => {
     const node = footer.current;
     if (!node) return;
-    const update = () => document.documentElement.style.setProperty("--mobile-footer-measured", `${Math.max(64, Math.ceil(node.getBoundingClientRect().height))}px`);
+    const update = () => document.documentElement.style.setProperty("--mobile-footer-measured", `${bottomNavReserve(node.getBoundingClientRect().height)}px`);
     update();
     const observer = new ResizeObserver(update);
     observer.observe(node);
@@ -124,11 +124,11 @@ function Shell() {
         </Routes>
         </div>
         <nav className="bottom" ref={footer} aria-label="Основные разделы">
-          <NavLink to="/schedule" className={selectedTab === "schedule" ? "active" : ""}><Icon name="calendar" />Расписание</NavLink>
-          <NavLink to="/maps" className={selectedTab === "maps" ? "active" : ""}><Icon name="map" />Карты</NavLink>
-          <NavLink to="/homework" className={selectedTab === "homework" ? "active" : ""}><Icon name="homework" />Домашка</NavLink>
-          <NavLink to="/chat" className={selectedTab === "chat" ? "active" : ""} aria-current={selectedTab === "chat" ? "page" : undefined}><Icon name="chat" />Чат</NavLink>
-          <button type="button" className={menu ? "active" : ""} aria-expanded={menu} aria-controls={menu ? "sections-menu" : undefined} onClick={() => { setMenuQuery(""); setMenu(true); }}><Icon name="menu" />Разделы</button>
+          <NavLink to="/schedule" className={selectedTab === "schedule" ? "active" : ""}><Icon name="calendar" /><span className="bottom-label">Расписание</span></NavLink>
+          <NavLink to="/maps" className={selectedTab === "maps" ? "active" : ""}><Icon name="map" /><span className="bottom-label">Карты</span></NavLink>
+          <NavLink to="/homework" className={selectedTab === "homework" ? "active" : ""}><Icon name="homework" /><span className="bottom-label">Домашка</span></NavLink>
+          <NavLink to="/chat" className={selectedTab === "chat" ? "active" : ""} aria-current={selectedTab === "chat" ? "page" : undefined}><Icon name="chat" /><span className="bottom-label">Чат</span></NavLink>
+          <button type="button" className={menu ? "active" : ""} aria-expanded={menu} aria-controls={menu ? "sections-menu" : undefined} onClick={() => { setMenuQuery(""); setMenu(true); }}><Icon name="menu" /><span className="bottom-label">Разделы</span></button>
         </nav>
       </div>
       {menu && (

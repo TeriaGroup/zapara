@@ -33,3 +33,11 @@ export function studyGroupCaption(groupName: string | undefined, period: { start
   const parity = parityOf(date, period.start, period.weekCount, invert);
   return `${name} · ${parity === 1 ? "нечётная" : parity === 2 ? "чётная" : `${parity}-я неделя`}`;
 }
+
+/**
+ * r2: сколько места снизу оставить под нижнюю навигацию — её реальная высота. Раньше было не меньше 64px,
+ * и на низком окне (200% масштаба) компактная панель всё равно отнимала 64px. 0 — панель скрыта или не измерена.
+ */
+export function bottomNavReserve(height: number): number {
+  return Number.isFinite(height) && height > 0 ? Math.ceil(height) : 64;
+}
