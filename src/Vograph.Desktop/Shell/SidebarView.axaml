@@ -31,14 +31,14 @@
                      IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
                      Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Tip}"
                      AutomationProperties.AutomationId="{Binding SettingsSection.AutomationId}" />
-          <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}" AutomationProperties.AutomationId="Shell.ThemeToggle" AutomationProperties.Name="{loc:T themeToggleTip}">
+          <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{Binding ThemeToggleTip}" AutomationProperties.AutomationId="Shell.ThemeToggle" AutomationProperties.Name="{Binding ThemeToggleTip}">
             <c:Icon Data="{Binding IsDark, Converter={x:Static loc:Converters.ThemeIcon}}" Size="16" />
           </Button>
         </StackPanel>
 
         <Button Classes="icon" DockPanel.Dock="Top" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{Binding SidebarToggleTip}" Margin="0,0,0,8"
                 HorizontalAlignment="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailAlignment}}"
-                AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleTip}">
+                AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleName}">
           <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
         </Button>
         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Background="Transparent">

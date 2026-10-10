@@ -19,6 +19,7 @@ const paths = {
   refresh: "M21 12a9 9 0 1 1-3-6.7 M21 3v6h-6",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z M21 21l-4.3-4.3",
   pin: "M16 9V4l1-1V2H7v1l1 1v5l-3 3v1h14v-1z M12 17v5",
+  megaphone: "M3 11l18-5v12L3 14v-3z M11.6 16.8a3 3 0 1 1-5.8-1.6",
   ballot: "M8 6h13 M8 12h13 M8 18h13 M3 6l1 1 2-2 M3 12l1 1 2-2 M3 18l1 1 2-2",
   plus: "M12 5v14 M5 12h14",
   minus: "M5 12h14",
@@ -32,6 +33,8 @@ const paths = {
   menu: "M4 6h16 M4 12h16 M4 18h16",
   close: "M18 6L6 18 M6 6l12 12",
   file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M8 13h8 M8 17h6",
+  bell: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10.3 21a1.94 1.94 0 0 0 3.4 0",
+  upload: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12",
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
 } as const;
 

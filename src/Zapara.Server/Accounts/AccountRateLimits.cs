@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Globalization;
-using System.Net;
 using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
@@ -11,7 +10,9 @@ internal static class AccountRateLimits
 {
     internal static void Add(IServiceCollection services)
     {
-        // Host-local random salt. Only integers 0..4095 can become partition keys.
+        // Host-local random salt. Partition keys are 64-bit salted hashes of the client network
+        // (IPv4 address or IPv6 /64), so addresses are not kept in plain text and unrelated clients do not share buckets.
+        // Idle partitions are dropped by the limiter itself.
         var salt = RandomNumberGenerator.GetBytes(32);
         services.AddRateLimiter(options =>
         {
@@ -33,10 +34,9 @@ internal static class AccountRateLimits
     private static void AddPolicy(RateLimiterOptions options, string name, int limit, TimeSpan window, byte[] salt)
         => options.AddPolicy(name, context =>
         {
-            var ip = context.Connection.RemoteIpAddress ?? IPAddress.None;
-            if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
-            var hash = HMACSHA256.HashData(salt, ip.GetAddressBytes());
-            var bucket = BinaryPrimitives.ReadUInt32LittleEndian(hash) & 4095;
+            var network = LoginThrottle.NetworkKey(context.Connection.RemoteIpAddress);
+            var hash = HMACSHA256.HashData(salt, System.Text.Encoding.ASCII.GetBytes(network));
+            var bucket = BinaryPrimitives.ReadUInt64LittleEndian(hash);
             return RateLimitPartition.GetFixedWindowLimiter(bucket, _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = limit, Window = window, QueueLimit = 0, AutoReplenishment = true
