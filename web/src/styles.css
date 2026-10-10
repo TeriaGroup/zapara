@@ -298,6 +298,9 @@ input::placeholder, textarea::placeholder { color: var(--field-placeholder); opa
 .person-main b, .inbox-main b, .preview-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .avatar { display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--chip); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; }
 .avatar img, .bubble .avatar img { display: block; width: 100%; height: 100%; margin: 0; border-radius: 50%; object-fit: cover; background: transparent; }
+/* #17: значок группы вместо букв, когда фото нет; в мелких аватарах сообщений — меньше */
+.avatar.avatar-icon .avatar-glyph { display: inline-grid; place-items: center; color: var(--text); }
+.bubble .avatar.message-avatar.avatar-icon svg { width: 16px; height: 16px; }
 .avatar-large { width: 72px; height: 72px; font-size: 23px; }
 .avatar-editor p { margin: 4px 0 0; }
 .avatar-upload { position: relative; cursor: pointer; }
