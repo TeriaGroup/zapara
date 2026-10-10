@@ -11,8 +11,8 @@ public static class AppPaths
         {
             var env = Environment.GetEnvironmentVariable(DataDirEnv);
             var dir = string.IsNullOrWhiteSpace(env)
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph")
-                : env;
+                ? Vograph.Core.Services.VographDataRoot.DefaultDir
+                : Path.GetFullPath(env);
             Directory.CreateDirectory(dir);
             return dir;
         }

@@ -12,6 +12,7 @@ import { unreadBadgeDescription, unreadBadgeText } from "./groupBrowse";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { timetableSubjects } from "./community-timetable";
 import { Icon } from "./icons";
+import { topicIcon } from "./topic-icon";
 import type { AccessRule, GroupSpace, GroupTopic, TopicAccess } from "./types";
 export const topicTemplates = [
     { template: "chat", kind: "chat", title: "Чат", icon: "💬", description: "Сообщения и вложения" },
@@ -27,7 +28,8 @@ export const powerTitles: Record<string, string> = { read: "Просматрив
 export function TopicMark({ topic }: {
     topic: GroupTopic;
 }) {
-    return <span className="topic-icon">{topic.icon === "💬" ? <Icon name="chat"/> : topic.icon === "📌" ? <Icon name="pin"/> : topic.icon === "🗳️" ? <Icon name="ballot"/> : topic.icon === "📚" ? <Icon name="homework"/> : topic.icon}</span>;
+    const view = topicIcon(topic.icon, topic.kind);
+    return <span className="topic-icon" aria-hidden="true">{"icon" in view ? <Icon name={view.icon}/> : view.text}</span>;
 }
 function failure(error: unknown) { return error instanceof Error && error.message === "access-refresh-failed" ? "Доступ изменился. Актуальные настройки не загрузились. Ваши правила сохранены; повторите проверку последствий." : error instanceof Error && error.message === "409" ? "Настройки изменились. Загружена актуальная версия; ваши несохранённые поля оставлены в форме. Проверьте их перед повторным сохранением." : error instanceof Error && error.message === "403" ? "Доступ к каналу изменился" : "Изменение не сохранено. Ввод оставлен в форме."; }
 const emptyChannelFields = () => ({ title: "", icon: "💬", template: "chat", description: "", categoryId: "", subject: "", position: 0, accent: "default" as import("./types").ChannelAccent, pinned: false, writePolicy: "all" as "all" | "managers" });
@@ -435,7 +437,7 @@ export function GroupTopics({ communityId, groupName, onOpen, onError }: {
       return rows.length ? <div className="topic-list" key={bucket.id}>
         <button className="btn quiet topic-category" type="button" aria-expanded={!!query.trim() || !collapsed[bucket.id]} disabled={!!query.trim()} title={query.trim() ? "При поиске категории раскрыты. Очистите поиск, чтобы свернуть." : undefined} onClick={() => toggleCategory(bucket.id)}>{bucket.title}</button>
         {(!!query.trim() || !collapsed[bucket.id]) && rows.map(topic => <div className="topic" key={topic.topicId || "general"}>
-          <button type="button" className="topic-open" disabled={!!preview} title={preview ? "В просмотре доступны только сведения о каналах. Выйдите, чтобы открыть канал." : undefined} onClick={() => onOpen(topic, canManage)}><TopicMark topic={topic}/><span className="topic-main"><b>{topic.title}{topic.pinned && <Icon name="pin" size={14}/>}</b><span className="preview">{topicPreview(topic)}</span></span><span className="topic-meta">{topic.lastAt && new Date(topic.lastAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}{topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}</span></button>
+          <button type="button" className="topic-open" disabled={!!preview} title={preview ? "В просмотре доступны только сведения о каналах. Выйдите, чтобы открыть канал." : undefined} onClick={() => onOpen(topic, canManage)}><TopicMark topic={topic}/><span className="topic-main"><b>{topic.topicId === null ? "Чат" : topic.title}{topic.pinned && <Icon name="pin" size={14}/>}</b><span className="preview">{topicPreview(topic)}</span></span><span className="topic-meta">{topic.lastAt && new Date(topic.lastAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}{topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}</span></button>
           {!preview && (allowed(topic, "channels") || allowed(topic, "access") || allowed(topic, "pin")) && <details className="topic-row-actions"><summary>Действия канала</summary><div className="row">
             {allowed(topic, "channels") && <button className="btn quiet" type="button" onClick={() => edit(topic)}>Настройки</button>}
             {allowed(topic, "access") && <button className="btn quiet" type="button" disabled={busy} onClick={() => openAccess(topic)}>Доступ</button>}

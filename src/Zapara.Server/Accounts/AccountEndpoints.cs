@@ -13,7 +13,7 @@ internal static class AccountEndpoints
         Route(group, "POST", "/auth/login", async context =>
         {
             var body = await AccountBodyReader.Read<LoginRequest>(context);
-            return Json(await Service(context).LoginAsync(body, context.RequestAborted));
+            return Json(await Service(context).LoginAsync(body, LoginThrottle.NetworkKey(context.Connection.RemoteIpAddress), context.RequestAborted));
         }, "account-login", false);
         Route(group, "POST", "/auth/refresh", async context =>
         {
@@ -139,7 +139,7 @@ internal static class AccountEndpoints
             catch (ExternalAuthException exception) { return AccountErrors.Problem(exception.Status, exception.Code); }
             catch (AccountServiceException exception)
             {
-                if (exception.Failure == AccountFailure.RateLimited) context.Response.Headers.RetryAfter = "60";
+                if (exception.Failure == AccountFailure.RateLimited) context.Response.Headers.RetryAfter = AccountErrors.RetryAfter(exception);
                 return AccountErrors.From(exception);
             }
         })).RequireRateLimiting(rate);

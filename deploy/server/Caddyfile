@@ -2,7 +2,7 @@ voen.teriahost.ru {
 	encode gzip
 	@admin path /admin /admin/* /livewire* /css/filament* /js/filament* /fonts/filament*
 	handle @admin {
-		reverse_proxy admin:80
+		reverse_proxy admin:8080
 	}
 	handle {
 		reverse_proxy server:8080

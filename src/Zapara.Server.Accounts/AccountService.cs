@@ -9,14 +9,16 @@ public sealed partial class AccountService
     private readonly string schema;
     private readonly TimeProvider clock;
     private readonly AccountPasswordWork passwords;
+    private readonly LoginThrottle throttle;
 
     public AccountService(AccountsDataSource dataSource, AccountsConfiguration configuration,
-        TimeProvider clock, AccountPasswordWork? passwords = null)
+        TimeProvider clock, AccountPasswordWork? passwords = null, LoginThrottle? throttle = null)
     {
         this.dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         schema = (configuration ?? throw new ArgumentNullException(nameof(configuration))).QuotedSchema;
         this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
         this.passwords = passwords ?? new AccountPasswordWork();
+        this.throttle = throttle ?? new LoginThrottle(clock);
     }
 
     private async Task<T> DatabaseAsync<T>(Func<AccountRepository, Task<T>> operation, CancellationToken ct)

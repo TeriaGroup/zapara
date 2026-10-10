@@ -39,19 +39,62 @@ public sealed partial class AccountService
         }, ct);
     }
 
+    /// <summary>Login from an unknown network (in-process callers and tests share one throttling key).</summary>
     public Task<SessionResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
+        => LoginAsync(request, LoginThrottle.NetworkKey(null), ct);
+
+    /// <param name="network">Client network from <see cref="LoginThrottle.NetworkKey"/>.</param>
+    public async Task<SessionResponse> LoginAsync(LoginRequest request, string network, CancellationToken ct = default)
     {
         Required(request);
+        ArgumentException.ThrowIfNullOrEmpty(network);
         var normalized = Validate(() => AccountValidation.NormalizeUsername(request.Username));
         Validate(() => AccountValidation.Password(request.Password));
         Validate(() => AccountValidation.Id(request.Device.DeviceId));
         Validate(() => AccountValidation.DeviceName(request.Device.DeviceName));
         Validate(() => AccountValidation.Platform(request.Device.Platform));
+        // Checked before the password: a throttled attempt never learns whether the password was right.
+        var decision = throttle.Evaluate(normalized, network);
+        // A device that has logged in to this account before is exempt from network blocks and the account delay,
+        // so neither a shared/attacked network nor failures elsewhere slow its owner down.
+        if (!decision.IsAllowed && !await KnownDeviceAsync(normalized, request.Device.DeviceId, ct))
+            throw new AccountServiceException(AccountFailure.RateLimited) { RetryAfter = decision.Wait };
+        try
+        {
+            var session = await PasswordLoginAsync(request, normalized, ct);
+            throttle.Succeeded(normalized, network);
+            return session;
+        }
+        catch (AccountServiceException e) when (e.Failure == AccountFailure.InvalidCredentials)
+        {
+            // Unknown usernames count too, so probing names costs the same as guessing passwords.
+            throttle.Failed(normalized, network);
+            throw;
+        }
+    }
+
+    /// <summary>How long a device stays "known" for throttling after it was last used with the account.</summary>
+    internal static readonly TimeSpan KnownDeviceLifetime = TimeSpan.FromDays(90);
+
+    /// <summary>True when this device id has an earlier session for this account, seen within <see cref="KnownDeviceLifetime"/>.
+    /// Device ids are random per installation and never shown to other users.</summary>
+    private Task<bool> KnownDeviceAsync(string normalized, Guid deviceId, CancellationToken ct)
+        => DatabaseAsync(async db =>
+        {
+            await using var command = db.Command($"""
+                SELECT EXISTS(SELECT 1 FROM {schema}.session_families f JOIN {schema}.users u ON u.user_id=f.user_id
+                WHERE u.normalized_username=@p0 AND u.status='active' AND f.device_id=@p1 AND f.last_seen_at>@p2)
+                """, normalized, deviceId, db.Now - KnownDeviceLifetime);
+            return await command.ExecuteScalarAsync(ct) is true;
+        }, ct);
+
+    private Task<SessionResponse> PasswordLoginAsync(LoginRequest request, string normalized, CancellationToken ct)
+    {
         return DatabaseAsync(async db =>
         {
             var snapshot = await db.UserAsync(username: normalized);
             var credential = snapshot is null ? null : await db.CredentialAsync(snapshot.User.UserId);
-            if (snapshot is null || snapshot.Status != "active" || credential is null || credential.LockedUntil > db.Now)
+            if (snapshot is null || snapshot.Status != "active" || credential is null)
             {
                 passwords.Dummy(request.Password, ct);
                 throw InvalidCredentials();
@@ -63,7 +106,7 @@ public sealed partial class AccountService
             var current = await db.UserAsync(snapshot.User.UserId, locked: true);
             var currentCredential = await db.CredentialAsync(snapshot.User.UserId, true);
             if (current is null || current.Status != "active" || current.Version != snapshot.Version ||
-                currentCredential is null || currentCredential.Hash != credential.Hash || currentCredential.LockedUntil > db.Now)
+                currentCredential is null || currentCredential.Hash != credential.Hash)
                 throw InvalidCredentials();
             if (result == PasswordVerificationResult.Failed)
             {
@@ -89,16 +132,18 @@ public sealed partial class AccountService
         }, ct);
     }
 
+    /// <summary>The counters stay for audit and support screens. They no longer lock the account:
+    /// throttling lives in <see cref="LoginThrottle"/>, keyed by client network.</summary>
     private async Task FailedLoginAsync(AccountRepository db, Guid userId, CredentialRow credential)
     {
         var now = db.Now;
         var reset = credential.Window is null || now >= credential.Window.Value.AddMinutes(15);
-        var count = reset ? 1 : Math.Min(5, credential.Failures + 1);
+        var count = reset ? 1 : Math.Min(int.MaxValue - 1, credential.Failures) + 1;
         var window = reset ? now : credential.Window!.Value;
         await db.ExecuteAsync($"""
-            UPDATE {schema}.password_credentials SET failed_count=@p0,failure_window_started_at=@p1,
-            locked_until=CASE WHEN @p0>=5 THEN @p2 ELSE NULL END WHERE user_id=@p3
-            """, count, window, now.AddMinutes(15), userId);
+            UPDATE {schema}.password_credentials SET failed_count=@p0,failure_window_started_at=@p1,locked_until=NULL
+            WHERE user_id=@p2
+            """, count, window, userId);
         await db.AuditAsync(userId, null, "login", "invalid_credentials");
     }
 
