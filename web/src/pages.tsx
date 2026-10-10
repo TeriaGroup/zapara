@@ -820,7 +820,7 @@ export function FriendsPage() {
   }
   return (
     <section className="page">
-      <Head title="Пересечения" text="Узнайте, когда друзья из других групп учатся рядом с вами.">
+      <Head title={S.navFriends} text="Узнайте, когда друзья из других групп учатся рядом с вами.">
         <button className="btn primary" type="button" aria-expanded={editorOpen} aria-controls="friend-editor"
           disabled={app.friends.length >= 5 && !editorOpen} onClick={() => setEditorOpen(value => !value)}>
           {editorOpen ? "Скрыть редактор" : "Добавить группу"}
@@ -1399,10 +1399,10 @@ function CommunityContent() {
     return () => { stopped = true; };
   }, [app.session?.authenticated, app.session?.user?.userId, app.session?.familyId, app.groupId, reloadEpoch]);
   const visible = list.filter(item => matchesBrowseQuery(search, item.name, item.description));
-  if (!app.session?.authenticated) return <section className="page"><Head title="Сообщество" /><div className="card empty"><p>Войдите в аккаунт, чтобы видеть сообщества своей группы.</p><Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link></div></section>;
+  if (!app.session?.authenticated) return <section className="page"><Head title={S.navCommunities} /><div className="card empty"><p>Войдите в аккаунт, чтобы видеть сообщества своей группы.</p><Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link></div></section>;
   return (
     <section className="page">
-      <Head title="Сообщество" text={error || "Роли старосты и куратора действуют только внутри «Расписание военмех» и не подтверждены университетом."} />
+      <Head title={S.navCommunities} text={error || "Роли старосты и куратора действуют только внутри «Расписание военмех» и не подтверждены университетом."} />
       <div className="stack">
         <div className="community-filter">
           <label className="field">Поиск группы

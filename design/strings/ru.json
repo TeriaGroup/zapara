@@ -3,6 +3,9 @@
   "strings": {
     "productName": { "ru": "Расписание военмех", "$comment": "#12, решение по умолчанию: название, которое уже показывает приложение. Сменить здесь и перегенерировать.", "android": ["ux100_common_public_name", "settings_about_title"] },
     "scheduleTitle": { "ru": "Расписание", "desktop": ["navSchedule"], "android": ["nav_schedule"] },
+    "navFriends": { "ru": "Друзья", "desktop": ["navFriends"], "$comment": "G-3: раздел друзей везде «Друзья» (web был «Пересечения»)." },
+    "navChats": { "ru": "Чаты", "desktop": ["navChat"], "$comment": "G-3: раздел бесед везде «Чаты»." },
+    "navCommunities": { "ru": "Сообщества", "desktop": ["navCommunity", "communityTitle"], "$comment": "G-3: «Сообщества», не «Сообщество»." },
     "parityOdd": { "ru": "нечётная", "desktop": ["odd"], "android": ["notification_odd"] },
     "parityEven": { "ru": "чётная", "desktop": ["even"], "android": ["notification_even"] },
     "parityOddTitle": { "ru": "Нечётная", "desktop": ["weekOdd"], "android": ["week_odd", "teacher_filter_odd"] },

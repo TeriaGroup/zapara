@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import * as api from "./api";
+import { S } from "./strings.gen";
 import { chatInboxTime, createChatInboxSourceSequence, filterChatInbox, mergeChatInbox, sortChatInbox, unreadChatTotal, type ChatInboxItem } from "./chatInbox";
 import { PeoplePanel } from "./people";
 import { useApp } from "./store";
@@ -135,7 +136,7 @@ function ChatInboxContent() {
     return () => { stopped = true; stopRefresh(); };
   }, [accountId, retry]);
 
-  if (!accountId) return <section className="page inbox"><PageHead title="Чат"/><div className="card empty">
+  if (!accountId) return <section className="page inbox"><PageHead title={S.navChats}/><div className="card empty">
     <p>Войдите в аккаунт, чтобы переписываться с группой и другими людьми.</p>
     <Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link>
   </div></section>;
@@ -145,7 +146,7 @@ function ChatInboxContent() {
   if (only?.kind === "group") return <Navigate replace to={destination(only)} />;
 
   return <section className="page inbox">
-    <PageHead title="Чат" text="Сообщения группы и личные беседы в одном месте.">
+    <PageHead title={S.navChats} text="Сообщения группы и личные беседы в одном месте.">
       {unread > 0 && <span className="chip inbox-total" aria-label={`Непрочитанных сообщений: ${unread}`}>Непрочитано: {unread > 99 ? "99+" : unread}</span>}
     </PageHead>
     {/* #17: одна понятная кнопка; список обновляется сам (startVisibleRefresh), ручное «Обновить» — только при ошибке. */}

@@ -11,6 +11,7 @@ import { browseHomework } from "./homework-browse.ts";
 import { personalHomeworkDue } from "./planner.ts";
 import * as teachers from "./teachers.ts";
 import * as chatUi from "./chat-ui.ts";
+import * as stringsGen from "./strings.gen.ts";
 import * as navigation from "./ux-navigation.ts";
 import * as subgroups from "./subgroups.ts";
 import * as routing from "./campus-routing.ts";
@@ -304,7 +305,7 @@ test("delayed inbox source retry cannot replace a newer full refresh", async()=>
     "./avatar-view":{Avatar:()=>null},
     "./personal-composer-context":{usePersonalDrafts:()=>[]},
     "./visible-refresh":visibleRefresh,
-    "./chat-ui":chatUi,
+    "./chat-ui":chatUi, "./strings.gen":stringsGen,
   };
   const out=await load("./chat.tsx",["ChatInboxContent"],modules,{document,window:fakeWindow});
   const render=()=>h.render(()=>out.ChatInboxContent());

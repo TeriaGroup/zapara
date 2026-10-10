@@ -22,10 +22,10 @@ const items: [string, string, IconName][] = [
   ["summary", "Сводка", "summary"],
   ["teachers", "Преподаватели", "teachers"],
   ["maps", "Карты", "map"],
-  ["friends", "Пересечения", "friends"],
+  ["friends", S.navFriends, "friends"],
   ["homework", "Домашка", "homework"],
-  ["chat", "Чат", "chat"],
-  ["community", "Сообщество", "community"],
+  ["chat", S.navChats, "chat"],
+  ["community", S.navCommunities, "community"],
   ["group", "Группа", "users"],
   ["settings", "Настройки", "settings"]
 ];
