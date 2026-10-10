@@ -115,7 +115,7 @@ public class ShellTests : UiTest
             await Waits.Until(() => communities.NeedAccount, "guest communities");
             Pump();
             Assert.Contains(window.GetVisualDescendants().OfType<EmptyState>(),
-                e => e.IsVisible && e.Title == "Чтобы вступить в сообщество, войдите в аккаунт");
+                e => e.IsVisible && e.Title == "Недоступно без входа");
 
             window.KeyPress(Key.D3, RawInputModifiers.Control, PhysicalKey.Digit3, null);
             Assert.Equal(SectionKey.Summary, shell.CurrentKey);

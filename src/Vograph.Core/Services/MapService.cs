@@ -60,7 +60,7 @@ public class MapService
     {
         _ = db;
         _schedule = schedule;
-        CacheDir = cacheDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph", "maps");
+        CacheDir = cacheDir ?? Path.Combine(VographDataRoot.DefaultDir, "maps");
         BundledDir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "maps");
         LoadCoords();
     }

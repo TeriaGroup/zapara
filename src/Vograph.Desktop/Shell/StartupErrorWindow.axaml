@@ -6,15 +6,24 @@
         Title="Военмех — ошибка запуска" Width="540" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterScreen" Background="{DynamicResource Brush.Canvas}">
   <StackPanel Margin="24" Spacing="12">
-    <TextBlock Classes="title" Text="Не удалось запустить приложение" />
-    <TextBlock Classes="muted" Text="Не удалось запустить приложение. Подробности записаны в файл журнала ниже." TextWrapping="Wrap" />
-    <Border Classes="card">
-      <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
-    </Border>
-    <TextBlock Classes="muted caption" Text="{Binding LogFile}" TextWrapping="Wrap" />
+    <TextBlock Classes="title" Text="{Binding Title}" TextWrapping="Wrap" AutomationProperties.AutomationId="StartupError.Title" />
+    <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" AutomationProperties.AutomationId="StartupError.Explanation" />
+    <TextBlock Classes="bad" Text="{Binding RetryNote}" IsVisible="{Binding HasRetryNote}" TextWrapping="Wrap" AutomationProperties.AutomationId="StartupError.RetryNote" />
+    <Expander Header="Подробности" HorizontalAlignment="Stretch" AutomationProperties.AutomationId="StartupError.Details">
+      <StackPanel Spacing="8">
+        <Border Classes="card">
+          <SelectableTextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+        </Border>
+        <TextBlock Text="Журнал ошибки:" />
+        <SelectableTextBlock Text="{Binding LogFile}" TextWrapping="Wrap" />
+        <Button Content="Открыть папку данных" Click="OnOpenFolder" HorizontalAlignment="Left" />
+      </StackPanel>
+    </Expander>
+    <TextBlock Name="CopyStatus" Classes="muted" IsVisible="False" Text="Отчёт скопирован" />
     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-      <Button Content="Открыть папку данных" Click="OnOpenFolder" />
-      <Button Classes="primary" Content="Закрыть" Click="OnClose" />
+      <Button Content="Закрыть" Click="OnClose" AutomationProperties.AutomationId="StartupError.Close" />
+      <Button Content="Скопировать отчёт" Click="OnCopyReport" AutomationProperties.AutomationId="StartupError.CopyReport" />
+      <Button Name="RetryButton" Classes="primary" Content="Повторить" Click="OnRetry" IsDefault="True" AutomationProperties.AutomationId="StartupError.Retry" />
     </StackPanel>
   </StackPanel>
 </Window>

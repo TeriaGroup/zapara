@@ -65,7 +65,7 @@ public class UpdateTests : UiTest
         source.Latest = new AutoUpdateService.UpdateInfo("windows-v2.1.16", "u", "z", "2026-09-01T00:00:00Z");
         Assert.False(await vm.CheckAsync());
         Assert.Equal(UpdateState.UpToDate, vm.State);
-        Assert.Contains(AppVersion.Tag, vm.StatusText);
+        Assert.Equal($"Версия {AppVersion.Short} — последняя · проверено в 15:00", vm.StatusText); // #18: без «windows-v»
         Assert.Contains("15:00", vm.CheckedAt);
         Assert.True(vm.CheckedThisSession);
 

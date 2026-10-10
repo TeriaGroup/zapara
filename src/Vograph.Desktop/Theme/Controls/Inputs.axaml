@@ -3,11 +3,12 @@
                     xmlns:c="using:Vograph.Desktop.Controls">
 
   <ControlTheme x:Key="{x:Type TextBox}" TargetType="TextBox">
-    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
-    <Setter Property="CaretBrush" Value="{DynamicResource Brush.Text1}" />
-    <Setter Property="SelectionBrush" Value="{DynamicResource Brush.LineStrong}" />
-    <Setter Property="BorderBrush" Value="Transparent" />
+    <!-- #11: граница поля — токен border-control (≥3:1 к фону), раньше Transparent. -->
+    <Setter Property="Background" Value="{DynamicResource Zp.SurfaceChip}" />
+    <Setter Property="Foreground" Value="{DynamicResource Zp.TextPrimary}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource Zp.TextPrimary}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource Zp.BorderControl}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Zp.BorderControl}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
     <Setter Property="Padding" Value="10,7" />
@@ -24,7 +25,7 @@
             <ContentPresenter Grid.Column="0" Content="{TemplateBinding InnerLeftContent}" VerticalAlignment="Center" Margin="0,0,8,0"
                               IsVisible="{TemplateBinding InnerLeftContent, Converter={x:Static ObjectConverters.IsNotNull}}" />
             <Panel Grid.Column="1">
-              <TextBlock x:Name="PART_Watermark" Text="{TemplateBinding PlaceholderText}" Foreground="{DynamicResource Brush.Text3}"
+              <TextBlock x:Name="PART_Watermark" Text="{TemplateBinding PlaceholderText}" Foreground="{DynamicResource Zp.TextSecondary}"
                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" IsVisible="False" TextWrapping="NoWrap" />
               <ScrollViewer x:Name="PART_ScrollViewer"
                             HorizontalScrollBarVisibility="{TemplateBinding (ScrollViewer.HorizontalScrollBarVisibility)}"
@@ -46,7 +47,7 @@
       </ControlTemplate>
     </Setter>
     <Style Selector="^:empty /template/ TextBlock#PART_Watermark"><Setter Property="IsVisible" Value="True" /></Style>
-    <Style Selector="^:focus"><Setter Property="BorderBrush" Value="{DynamicResource Brush.LineStrong}" /></Style>
+    <Style Selector="^:focus"><Setter Property="BorderBrush" Value="{DynamicResource Zp.BorderControl}" /></Style>
     <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.5" /></Style>
   </ControlTheme>
 
@@ -67,7 +68,7 @@
 
   <ControlTheme x:Key="{x:Type ListBoxItem}" TargetType="ListBoxItem">
     <Setter Property="Background" Value="Transparent" />
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    <Setter Property="Foreground" Value="{DynamicResource Zp.TextPrimary}" />
     <Setter Property="Padding" Value="10,7" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
     <Setter Property="Margin" Value="0,1" />
@@ -80,15 +81,15 @@
                           HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
       </ControlTemplate>
     </Setter>
-    <Style Selector="^:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /></Style>
-    <Style Selector="^:selected"><Setter Property="Background" Value="{DynamicResource Brush.Chip}" /><Setter Property="FontWeight" Value="Medium" /></Style>
+    <Style Selector="^:pointerover"><Setter Property="Background" Value="{DynamicResource Zp.Selection}" /></Style>
+    <Style Selector="^:selected"><Setter Property="Background" Value="{DynamicResource Zp.SurfaceChip}" /><Setter Property="FontWeight" Value="Medium" /></Style>
   </ControlTheme>
 
   <ControlTheme x:Key="{x:Type ToolTip}" TargetType="ToolTip">
-    <Setter Property="Background" Value="{DynamicResource Brush.Card}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+    <Setter Property="Background" Value="{DynamicResource Zp.Surface2}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Zp.BorderSubtle}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    <Setter Property="Foreground" Value="{DynamicResource Zp.TextPrimary}" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Chip}" />
     <Setter Property="Padding" Value="8,5" />
     <Setter Property="FontSize" Value="12" />
@@ -109,15 +110,15 @@
   <ControlTheme x:Key="{x:Type c:Switch}" TargetType="c:Switch">
     <Setter Property="MinHeight" Value="48" />
     <Setter Property="MinWidth" Value="48" />
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    <Setter Property="Foreground" Value="{DynamicResource Zp.TextPrimary}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="Cursor" Value="Hand" />
     <Setter Property="Template">
       <ControlTemplate>
         <StackPanel Orientation="Horizontal" Spacing="10" Background="Transparent">
-          <Border x:Name="PART_Track" Width="34" Height="18" CornerRadius="9" Background="{DynamicResource Brush.LineStrong}" VerticalAlignment="Center">
-            <Border x:Name="PART_Knob" Width="14" Height="14" CornerRadius="7" Background="{DynamicResource Brush.Canvas}"
+          <Border x:Name="PART_Track" Width="34" Height="18" CornerRadius="9" Background="{DynamicResource Zp.BorderControl}" VerticalAlignment="Center">
+            <Border x:Name="PART_Knob" Width="14" Height="14" CornerRadius="7" Background="{DynamicResource Zp.Surface0}"
                     HorizontalAlignment="Left" VerticalAlignment="Center" Margin="2,0,0,0" RenderTransform="translateX(0px)" />
           </Border>
           <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
@@ -126,9 +127,13 @@
         </StackPanel>
       </ControlTemplate>
     </Setter>
-    <Style Selector="^:checked /template/ Border#PART_Track"><Setter Property="Background" Value="{DynamicResource Brush.Accent}" /></Style>
-    <Style Selector="^:checked /template/ Border#PART_Knob"><Setter Property="RenderTransform" Value="translateX(16px)" /><Setter Property="Background" Value="{DynamicResource Brush.OnAccent}" /></Style>
+    <Style Selector="^:checked /template/ Border#PART_Track"><Setter Property="Background" Value="{DynamicResource Zp.Accent}" /></Style>
+    <Style Selector="^:checked /template/ Border#PART_Knob"><Setter Property="RenderTransform" Value="translateX(16px)" /><Setter Property="Background" Value="{DynamicResource Zp.OnAccent}" /></Style>
     <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.5" /></Style>
   </ControlTheme>
+
+  <!-- #21: Typography задаёт CheckBox MinHeight 48, а квадрат Fluent лежит в сетке высотой CheckBoxMinHeight (32) у верхнего края —
+       без этого квадрат на 8 px выше подписи и соседних полей фильтра. -->
+  <x:Double x:Key="CheckBoxMinHeight">48</x:Double>
 
 </ResourceDictionary>

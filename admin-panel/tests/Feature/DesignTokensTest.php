@@ -1,0 +1,42 @@
+<?php
+
+namespace Tests\Feature;
+
+use Filament\Support\Colors\Color;
+use Filament\Support\Facades\FilamentColor;
+use Tests\TestCase;
+
+// #11: тема Filament берёт цвета из общих дизайн-токенов (design/tokens.json → config/design-tokens.php).
+class DesignTokensTest extends TestCase
+{
+    public function test_filament_colors_come_from_design_tokens(): void
+    {
+        $html = $this->get('/admin/login')->assertOk()->getContent();
+        $colors = FilamentColor::getColors();
+        $tokens = config('design-tokens');
+
+        $this->assertSame(Color::convertToOklch($tokens['light']['accent']), $colors['primary'][600]);
+        foreach (['danger', 'warning', 'success', 'info'] as $role) {
+            $this->assertSame(Color::convertToOklch($tokens['light'][$role]), $colors[$role][600], $role);
+            $this->assertCount(11, $colors[$role], $role);
+        }
+        $this->assertNotSame(Color::Amber[600], $colors['primary'][600]);
+        $this->assertStringContainsString('--primary-600:'.Color::convertToOklch($tokens['light']['accent']), $html);
+    }
+
+    public function test_panel_pages_expose_token_css_variables_for_both_themes(): void
+    {
+        $html = $this->get('/admin/login')->assertOk()->getContent();
+
+        $this->assertStringContainsString('--zp-border-control: '.config('design-tokens.light.border-control'), $html);
+        $this->assertStringContainsString('--zp-border-control: '.config('design-tokens.dark.border-control'), $html);
+        $this->assertMatchesRegularExpression('/\.dark\s*\{[^}]*--zp-text-primary/s', $html);
+
+        // В тёмной теме кнопка primary — светлый accent с тёмным текстом, а не почти чёрная на чёрном фоне.
+        preg_match('/\.dark \.fi-btn\.fi-color-primary\s*\{([^}]*)\}/s', $html, $button);
+        $this->assertStringContainsString('--dark-bg: '.config('design-tokens.dark.accent').';', $button[1]);
+        $this->assertStringContainsString('--dark-text: '.config('design-tokens.dark.on-accent').';', $button[1]);
+        // Активный пункт меню в тёмной теме — основной цвет текста, а не тусклый серый.
+        $this->assertMatchesRegularExpression('/\.dark\s*\{[^}]*--primary-400: '.preg_quote(config('design-tokens.dark.text-primary'), '/').';/s', $html);
+    }
+}

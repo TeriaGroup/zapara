@@ -12,7 +12,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->trustProxies(at: '*');
+        // Trusted proxies come from config/trustedproxy.php (TRUSTED_PROXIES): only the reverse proxy network
+        // may set X-Forwarded-* headers, so clients cannot pick their own address for throttling.
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

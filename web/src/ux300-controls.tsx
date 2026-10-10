@@ -29,10 +29,11 @@ export function useConnectivity() {
   useEffect(() => { const update = () => setOnline(navigator.onLine); window.addEventListener("online", update); window.addEventListener("offline", update); return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); }; }, []);
   return online;
 }
-export function SecretInput({ value, onChange, disabled, autoComplete = "off", label }: { value: string; onChange: (value: string) => void; disabled?: boolean; autoComplete?: string; label: string }) {
+export function SecretInput({ value, onChange, disabled, autoComplete = "off", label, onBlur, invalid, describedBy }: { value: string; onChange: (value: string) => void; disabled?: boolean; autoComplete?: string; label: string; onBlur?: () => void; invalid?: boolean; describedBy?: string }) {
   const [shown, setShown] = useState(false);
   useEffect(()=>{if(!value)setShown(false);},[value]);
-  return <label className="field">{label}<span className="row"><input style={{ flex: "1 1 180px", minWidth: 0 }} type={shown ? "text" : "password"} value={value} disabled={disabled} autoComplete={autoComplete} onChange={event => onChange(event.target.value)} /><button className="btn quiet" type="button" disabled={disabled} aria-pressed={shown} onClick={() => setShown(value => !value)}>{shown ? "Скрыть" : "Показать"}</button></span></label>;
+  // #16: переключатель видимости — иконка внутри поля с доступным именем.
+  return <label className="field">{label}<span className="secret-field"><input type={shown ? "text" : "password"} value={value} disabled={disabled} autoComplete={autoComplete} aria-invalid={invalid || undefined} aria-describedby={describedBy} onBlur={onBlur} onChange={event => onChange(event.target.value)} /><button className="secret-toggle" type="button" disabled={disabled} aria-pressed={shown} aria-label={shown ? "Скрыть пароль" : "Показать пароль"} title={shown ? "Скрыть пароль" : "Показать пароль"} onClick={() => setShown(value => !value)}><Icon name={shown ? "eyeOff" : "eye"} size={18} /></button></span></label>;
 }
 
 const positions = new Map<string, number>();

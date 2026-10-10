@@ -6,6 +6,8 @@ public sealed class AccountServiceException : Exception
 {
     public AccountServiceException(AccountFailure failure) : base("Операция аккаунта отклонена.") => Failure = failure;
     public AccountFailure Failure { get; }
+    /// <summary>Set for throttled logins: how long the client should wait (sent as Retry-After).</summary>
+    public TimeSpan? RetryAfter { get; init; }
     public string Code => Failure switch
     {
         AccountFailure.InvalidCredentials => "invalid_credentials",

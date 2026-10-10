@@ -18,7 +18,7 @@
       <Setter Property="BorderThickness" Value="3,1,1,1" />
     </Style>
   </UserControl.Styles>
-  <Grid Margin="32,26" RowDefinitions="Auto,*" MaxWidth="1160" HorizontalAlignment="Stretch">
+  <Grid Margin="24,20" RowDefinitions="Auto,*" MaxWidth="1160" HorizontalAlignment="Left">
     <StackPanel Spacing="4">
       <TextBlock Classes="display" Text="{Binding Title}" />
       <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap"

@@ -16,7 +16,7 @@
   </ControlTheme>
 
   <ControlTheme x:Key="{x:Type c:SegmentedControl}" TargetType="c:SegmentedControl">
-    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="Background" Value="{DynamicResource Zp.SurfaceChip}" />
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="Template">
       <ControlTemplate>
@@ -34,7 +34,7 @@
 
   <ControlTheme x:Key="{x:Type c:NavItem}" TargetType="c:NavItem">
     <Setter Property="Background" Value="Transparent" />
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+    <Setter Property="Foreground" Value="{DynamicResource Zp.TextSecondary}" />
     <Setter Property="Padding" Value="10,8" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
     <Setter Property="MinHeight" Value="48" />
@@ -61,8 +61,8 @@
         </Panel>
       </ControlTemplate>
     </Setter>
-    <Style Selector="^:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
-    <Style Selector="^:active"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /><Setter Property="FontWeight" Value="Medium" /></Style>
+    <Style Selector="^:pointerover"><Setter Property="Background" Value="{DynamicResource Zp.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Zp.TextPrimary}" /></Style>
+    <Style Selector="^:active"><Setter Property="Background" Value="{DynamicResource Zp.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Zp.TextPrimary}" /><Setter Property="FontWeight" Value="Medium" /></Style>
     <Style Selector="^:pressed"><Setter Property="RenderTransform" Value="scale(0.98)" /></Style>
     <Style Selector="^:compact"><Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="Padding" Value="0,9" /></Style>
     <Style Selector="^:compact /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="IsVisible" Value="False" /></Style>
@@ -70,7 +70,7 @@
 
   <ControlTheme x:Key="{x:Type c:Skeleton}" TargetType="c:Skeleton">
     <Setter Property="Height" Value="12" />
-    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="Background" Value="{DynamicResource Zp.SurfaceChip}" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Chip}" />
     <Setter Property="ClipToBounds" Value="True" />
     <Setter Property="Template">
@@ -99,11 +99,15 @@
     <Setter Property="Template">
       <ControlTemplate>
         <StackPanel Spacing="8" HorizontalAlignment="Center">
-          <c:Icon Data="{TemplateBinding Icon}" Size="24" Foreground="{DynamicResource Brush.Text3}" HorizontalAlignment="Center"
+          <c:Icon Data="{TemplateBinding Icon}" Size="24" Foreground="{DynamicResource Zp.TextSecondary}" HorizontalAlignment="Center"
                   IsVisible="{TemplateBinding Icon, Converter={x:Static ObjectConverters.IsNotNull}}" />
-          <TextBlock Text="{TemplateBinding Title}" Foreground="{DynamicResource Brush.Text2}" FontSize="15" TextAlignment="Center" TextWrapping="Wrap" />
-          <TextBlock Text="{TemplateBinding Hint}" Foreground="{DynamicResource Brush.Text3}" FontSize="12" TextAlignment="Center" TextWrapping="Wrap"
+          <TextBlock Text="{TemplateBinding Title}" Foreground="{DynamicResource Zp.TextPrimary}" FontSize="{DynamicResource Zp.Font.Body}" TextAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Text="{TemplateBinding Hint}" Foreground="{DynamicResource Zp.TextSecondary}" FontSize="{DynamicResource Zp.Font.Secondary}" TextAlignment="Center" TextWrapping="Wrap"
                      IsVisible="{TemplateBinding Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <Button x:Name="PART_Action" Classes="primary" Content="{TemplateBinding ActionText}" Command="{TemplateBinding Command}"
+                  CommandParameter="{TemplateBinding CommandParameter}" HorizontalAlignment="Center" Margin="0,8,0,0"
+                  AutomationProperties.AutomationId="{TemplateBinding ActionAutomationId}"
+                  IsVisible="{TemplateBinding ActionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
       </ControlTemplate>
     </Setter>

@@ -3,7 +3,7 @@ import { addDays, lessonsOn } from "./parity.ts";
 import { visibleLessons } from "./subgroups.ts";
 
 export type GroupChatContext = {
-  nextLesson: { date: Date; subject: string; time: string; room: string } | null;
+  nextLesson: { date: Date; subject: string; time: string; room: string; ongoing: boolean } | null;
   activeBallots: number;
   unread: number;
   hasContent: boolean;
@@ -39,6 +39,7 @@ export function buildGroupChatContext(input: GroupChatContextInput): GroupChatCo
   let nextLesson: GroupChatContext["nextLesson"] = null;
   if (sameGroup && input.timetableAvailable && input.period && input.lessons.length) {
     const shown = visibleLessons(input.lessons, input.subgroupChoices);
+    const now = input.now.getHours() * 60 + input.now.getMinutes();
     for (let offset = 0; offset < 14 && !nextLesson; offset += 1) {
       const date = addDays(input.now, offset);
       const day = lessonsOn(shown, date, input.period.start, input.period.weekCount, input.invert);
@@ -46,7 +47,6 @@ export function buildGroupChatContext(input: GroupChatContextInput): GroupChatCo
         const start = timeMinutes(item.timeStart);
         if (start === null) return false;
         const end = timeMinutes(item.timeEnd) ?? start + 95;
-        const now = input.now.getHours() * 60 + input.now.getMinutes();
         return offset > 0 || start > now || end > now;
       });
       if (lesson) {
@@ -55,6 +55,7 @@ export function buildGroupChatContext(input: GroupChatContextInput): GroupChatCo
           subject: lesson.subjectNormalized.trim() || lesson.subjectRaw.trim(),
           time: lesson.timeStart,
           room: (lesson.roomRaw || lesson.classroomRaw || "").trim(),
+          ongoing: offset === 0 && (timeMinutes(lesson.timeStart) ?? 0) <= now,
         };
       }
     }
