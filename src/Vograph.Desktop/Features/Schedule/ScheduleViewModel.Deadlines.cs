@@ -22,7 +22,7 @@ public sealed partial class ScheduleViewModel
     private bool deadlineUndoShared;
     public bool HasDeadlineFeedback=>DeadlineFeedback.Length>0;
     public bool HasNextStudyDate=>NextStudyDate is not null;
-    public string NextStudyCaption=>NextStudyDate is {} date?$"Следующий учебный день · {date.ToString("d MMMM", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))}" : "";
+    public string NextStudyCaption=>NextStudyDate is {} date?$"Открыть {Vograph.Desktop.Domain.LessonText.ShortDate(date)}" : ""; // G-3: как на web — «Открыть …», дата в общем формате
     // #12: как на web — «Ближайшие сроки · N».
     // #12: как на web — «Ближайшие сроки · N»; #19 (D-05): пустой блок — одна строка.
     public string DeadlineTitle=>Deadlines.Count==0?"Сроков на 3 дня нет":$"{Vograph.Desktop.Services.Loc.Current.T("deadlinesTitle")} · {Deadlines.Count}";

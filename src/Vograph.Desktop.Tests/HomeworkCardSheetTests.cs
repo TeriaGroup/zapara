@@ -86,4 +86,30 @@ public class HomeworkCardSheetTests : UiTest
         Assert.False(row.IsSheetOpen);
         AssertNoBindingErrors();
     }
+
+    [AvaloniaFact]
+    public async Task Tapping_the_card_opens_and_closes_the_sheet_like_a_lesson_card()
+    {
+        var (db, _, window) = await OpenAsync();
+        using var _ = db;
+        var card = FirstCard(window);
+        var row = (HomeworkRowViewModel)card.DataContext!;
+        var text = card.GetVisualDescendants().OfType<TextBlock>().First(t => t.Classes.Contains("hwtext") && t.Text == row.Text);
+
+        Click(window, text);
+        Pump();
+        Assert.True(row.IsSheetOpen, "нажатие по тексту задания открывает лист");
+        Assert.True(ById(card, "HomeworkRow.Sheet").IsEffectivelyVisible);
+
+        Click(window, card.GetVisualDescendants().OfType<TextBlock>().First(t => t.Classes.Contains("subject")));
+        Pump();
+        Assert.False(row.IsSheetOpen, "повторное нажатие по карточке закрывает лист");
+
+        // Кнопки внутри карточки делают своё и лист не трогают.
+        Click(window, ById(card, "Homework.Done"));
+        Pump(); await Task.Delay(200); Pump();
+        Assert.DoesNotContain(window.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("hwrow")),
+            b => b.DataContext is HomeworkRowViewModel { IsSheetOpen: true });
+        AssertNoBindingErrors();
+    }
 }

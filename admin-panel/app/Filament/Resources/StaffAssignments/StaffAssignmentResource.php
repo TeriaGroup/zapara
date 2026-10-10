@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\StaffAssignments;
 
+use App\Filament\Support\MoscowTime;
 use App\Filament\Resources\Communities\CommunityResource;
 use App\Filament\Resources\StaffAssignments\Pages\ManageStaffAssignments;
 use App\Models\AccountUser;
@@ -75,8 +76,8 @@ class StaffAssignmentResource extends Resource
                     ->formatStateUsing(fn (string $state): string => StaffAssignment::ROLES[$state] ?? $state)
                     ->color(fn (string $state): string => $state === 'headman' ? 'info' : 'success'),
                 TextColumn::make('assigned_at')
-                    ->label('Назначен')
-                    ->dateTime('j M Y, H:i', 'Europe/Moscow')
+                    ->label('Назначен (МСК)')
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state)) // G-3: «9 окт., 18:49», год — если не текущий
                     ->sortable()
                     ->visibleFrom('md'),
             ])

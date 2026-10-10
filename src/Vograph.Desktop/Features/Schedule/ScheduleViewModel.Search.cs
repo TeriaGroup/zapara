@@ -39,7 +39,7 @@ public sealed partial class ScheduleViewModel
     [RelayCommand] private void OpenSearchResult(LessonRowViewModel? row)
     {
         if (row is null || !Lessons.Contains(row)) return;
-        row.ShowDetails = true;
+        row.Reveal();
         LessonFocusRequested?.Invoke(row);
     }
 }

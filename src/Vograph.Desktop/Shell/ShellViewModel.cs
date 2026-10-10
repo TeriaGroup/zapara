@@ -49,9 +49,11 @@ public sealed partial class ShellViewModel : ViewModelBase
             Make(SectionKey.Maps, "navMaps", "Icon.Map", "Ctrl+5"),
             Make(SectionKey.Friends, "navFriends", "Icon.Friends", "Ctrl+6"),
             Make(SectionKey.Homework, "navHomework", "Icon.Homework", "Ctrl+7"),
-            Make(SectionKey.Community, "navCommunity", "Icon.Community", "Ctrl+9"),
-            Make(SectionKey.Group, "navGroup", "Icon.Chat", "Ctrl+0"),
+            // #27 (X-02): порядок и значки — как в боковом меню web (design/navigation.md); у «Группы» свой значок,
+            // а не тот же, что у «Чатов». Сочетания клавиш не менялись.
             Make(SectionKey.Chat, "navChat", "Icon.Chat", ""),
+            Make(SectionKey.Community, "navCommunity", "Icon.Community", "Ctrl+9"),
+            Make(SectionKey.Group, "navGroup", "Icon.Users", "Ctrl+0"),
         };
         SettingsSection = Make(SectionKey.Settings, "navSettings", "Icon.Settings", "Ctrl+8");
 
@@ -749,9 +751,9 @@ public sealed partial class ShellViewModel : ViewModelBase
         GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {today.ToString("d MMM", culture)}";
         // LastFetchedAt is stored in UTC and Stale compares against UTC; the default clock is DateTime.Now, so
         // this is the same instant it always was, only sourced from the clock a test can pin.
-        var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, now.ToUniversalTime(), App.Loc);
-        StaleText = data.SourceStale ? "Данные расписания могут быть устаревшими" : stale;
-        StaleWarn = warn || data.SourceStale;
+        var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, now.ToUniversalTime(), App.Loc, data.SourceStale);
+        StaleText = stale;
+        StaleWarn = warn;
     }
 
     /// <summary>Sealed type: 'internal' rather than 'protected' so later dialogs in this assembly can raise it without CS0628.

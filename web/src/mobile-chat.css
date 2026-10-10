@@ -59,9 +59,12 @@
     padding: 0; border: 0; border-radius: 0; background: var(--surface); overflow: hidden;
   }
   .group-page.group-chat-focused .split.focus .log { flex: 1; min-height: 0; max-height: none; overflow-y: auto; }
+  /* r2: шапка (быстрые каналы, «В группе сейчас», «Поиск и фильтры») — около 258px; при прежних min(32%, 200px)
+     она всегда обрезалась посередине без признака прокрутки. Теперь на обычном телефоне помещается целиком,
+     лента сообщений сохраняет не меньше половины карточки; на очень низком экране шапка по-прежнему прокручивается. */
   .group-page .group-thread-tools {
     display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0;
-    max-height: min(32%, 200px); gap: 8px; overflow-y: auto; overflow-x: hidden;
+    max-height: min(50%, 300px); gap: 8px; overflow-y: auto; overflow-x: hidden;
     overscroll-behavior: contain;
   }
   .group-page .group-thread-tools > * { flex-shrink: 0; }

@@ -111,8 +111,12 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
     }
     LaunchedEffect(state.selected) { if (didRestore) restoredDate = state.selected.toString() }
     Column(Modifier.fillMaxSize()) {
-        ZTopBar(stringResource(R.string.nav_schedule)) {
-            ZButton(stringResource(R.string.nav_week), { onWeek(state.selected) }, ghost = true, quiet = true)
+        // #109 / AN-09: без группы — ни «Неделя», ни второй «Выбрать группу» в шапке; действие — в пустом состоянии.
+        val noGroup = state.loaded && !state.hasGroup
+        androidx.compose.runtime.CompositionLocalProvider(ru.bgtu_voenmeh.zapara.ui.shell.LocalGroupPickInContent provides noGroup) {
+            ZTopBar(stringResource(R.string.nav_schedule)) {
+                if (!noGroup) ZButton(stringResource(R.string.nav_week), { onWeek(state.selected) }, ghost = true, quiet = true)
+            }
         }
         if (state.undoSubgroup != null) ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
             tag = "Schedule.SubgroupUndo") {
@@ -369,7 +373,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                 tag = "Schedule.RemainingOnly", startAligned = true, leadingIcon = R.drawable.ic_chevron_right)
             if (conflictPairs.isNotEmpty()) ZCard(Modifier.fillMaxWidth(), tag = "Schedule.Conflicts") {
                 Text(stringResource(R.string.uxnext_conflict_title, conflictPairs.size),
-                    style = Zapara.typography.bodyStrong, color = Zapara.colors.warn)
+                    style = Zapara.typography.bodyStrong, color = Zapara.colors.text1) // #109 / AN-11: не warn-текст
                 conflictPairs.forEach { (firstIndex, secondIndex) ->
                     val first = page.lessons[firstIndex]
                     val second = page.lessons[secondIndex]
@@ -405,7 +409,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                     ZChip(duration)
                 }
             }
-            if (lesson in conflicts) Text(uiText(R.string.space_day_overlap), style = Zapara.typography.caption, color = Zapara.colors.warn)
+            if (lesson in conflicts) Text(uiText(R.string.space_day_overlap), style = Zapara.typography.caption, color = Zapara.colors.text2)
             if (lesson == featured) {
                 LessonCard(lesson, onLongClick = { onEvent(ScheduleEvent.LongPress(lesson)) }, onRoom = { onOpenMap(lesson.classroomRaw) },
                     onToggleDone = { id -> onEvent(ScheduleEvent.ToggleDone(id,

@@ -39,6 +39,8 @@
       <SolidColorBrush x:Key="Zp.DangerSoft" Color="#1FC53444" />
       <SolidColorBrush x:Key="Zp.Warning" Color="#B26A0F" />
       <SolidColorBrush x:Key="Zp.WarningSoft" Color="#1FB26A0F" />
+      <SolidColorBrush x:Key="Zp.WarningText" Color="#8A5300" />
+      <SolidColorBrush x:Key="Zp.WarningSurface" Color="#FFF2D6" />
       <SolidColorBrush x:Key="Zp.Success" Color="#1F8A56" />
       <SolidColorBrush x:Key="Zp.Info" Color="#2272C3" />
       <SolidColorBrush x:Key="Zp.Selection" Color="#0D000000" />
@@ -69,6 +71,8 @@
       <SolidColorBrush x:Key="Zp.DangerSoft" Color="#24EF5B6B" />
       <SolidColorBrush x:Key="Zp.Warning" Color="#F2A33C" />
       <SolidColorBrush x:Key="Zp.WarningSoft" Color="#24F2A33C" />
+      <SolidColorBrush x:Key="Zp.WarningText" Color="#F2A33C" />
+      <SolidColorBrush x:Key="Zp.WarningSurface" Color="#362B1C" />
       <SolidColorBrush x:Key="Zp.Success" Color="#4CC38A" />
       <SolidColorBrush x:Key="Zp.Info" Color="#5AA9FF" />
       <SolidColorBrush x:Key="Zp.Selection" Color="#14FFFFFF" />

@@ -148,7 +148,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
             return; }
         pendingLessonFocus = null;
         var row = matches[0];
-        row.ShowDetails = true;
+        row.Reveal();
         LessonFocusRequested?.Invoke(row);
     }
     public ObservableCollection<ScheduleOverlap> Overlaps { get; } = new();
@@ -159,7 +159,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (overlap is null || !Overlaps.Contains(overlap)) return;
         var row = first ? overlap.First : overlap.Second;
         if (!Lessons.Contains(row)) return;
-        row.ShowDetails = true; LessonFocusRequested?.Invoke(row);
+        row.Reveal(); LessonFocusRequested?.Invoke(row);
     }
     [ObservableProperty] private IReadOnlyList<string> transferWarnings = [];
     public bool HasTransferWarnings => TransferWarnings.Count > 0;

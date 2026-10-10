@@ -49,7 +49,7 @@ public class ScheduleLogicTests
     }
 
     [Theory]
-    [InlineData("done", 0, "сдано")]
+    [InlineData("done", 0, "выполнено")]
     [InlineData("overdue", 0, "просрочено 07.09")]
     [InlineData("burning_urgent", 0, "горит сегодня")]
     [InlineData("burning", 0, "горит завтра")]

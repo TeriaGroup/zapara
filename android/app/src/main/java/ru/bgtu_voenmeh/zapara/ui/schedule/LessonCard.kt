@@ -1,5 +1,8 @@
 package ru.bgtu_voenmeh.zapara.ui.schedule
 
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -119,7 +122,10 @@ fun LessonCard(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) {
                     if (burning) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(c.warn).breath(true))
+                        // #109 / AN-11: точка объяснена для TalkBack, у зрячих рядом подпись чипа срока.
+                        val dot = stringResource(R.string.lesson_hw_burning_dot)
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(c.warn).breath(true)
+                            .semantics { contentDescription = dot }.testTag("Homework.BurningDot"))
                     }
                     ZChip(row.label, selected = row.status == "burning" || row.status == "burning_urgent")
                     ZSwitch(row.done, { if (row.id !in pendingDoneIds) onToggleDone(row.id) }, "Homework.Done.${row.id}",

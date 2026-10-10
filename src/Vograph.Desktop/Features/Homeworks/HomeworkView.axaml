@@ -85,8 +85,10 @@
                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="h:HomeworkRowViewModel">
+                    <!-- #9 (G-2): нажатие в любое место карточки открывает или закрывает её лист, как у карточки пары и на web. -->
                     <Border Classes="card hoverable hwrow" Classes.past="{Binding IsDone}" Classes.next="{Binding IsHighlighted}"
-                            c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
+                            c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}" Tapped="OnCardTapped"
+                            AutomationProperties.AutomationId="HomeworkRow.Card">
                       <Grid RowDefinitions="Auto,Auto">
                         <StackPanel Spacing="6">
                           <CheckBox Content="Выбрать это задание" IsChecked="{Binding SelectedForBulk}" IsVisible="{Binding ShowBulkSelection}" IsEnabled="{Binding !IsDone}" />
