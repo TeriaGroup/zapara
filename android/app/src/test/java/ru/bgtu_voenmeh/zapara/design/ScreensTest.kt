@@ -109,6 +109,26 @@ class ScreensTest {
     @Test fun s39() { val st = mapsLesson("229", "Физика · 10:50–12:20 · 229 ГК")
         shotSettled("39-maps-lesson-room-not-on-plan-light") { Shell(false, Section.Maps, chipOdd) { ru.bgtu_voenmeh.zapara.ui.maps.MapsSection(st, {}) } } }
 
+    /** #105 follow-up: подразделы настроек с переключателями — аудит семантики (UNLABELED у переключателей без подписи). */
+    @Test fun s41() = shot("41-settings-study-source-light") { Shell(false, Section.Settings, chipOdd) { SettingsSection(settings(), {}, UpdateUiState(), {}, guestAccount(), initialSection = "study") } }
+    @Test fun s42() = shot("42-settings-appearance-light") { Shell(false, Section.Settings, chipOdd) { SettingsSection(settings(), {}, UpdateUiState(), {}, guestAccount(), initialSection = "appearance") } }
+    @Test fun s43() = shot("43-settings-maps-light") { Shell(false, Section.Settings, chipOdd) { SettingsSection(settings(), {}, UpdateUiState(), {}, guestAccount(), initialSection = "maps") } }
+    @Test fun s44() = shot("44-settings-notifications-light") { Shell(false, Section.Settings, chipOdd) { SettingsSection(settings(), {}, UpdateUiState(), {}, guestAccount(), initialSection = "notifications") } }
+
+    /** #105 follow-up: домашка сообщества с отметкой «Выполнено» на карточке. */
+    @Test fun s45() {
+        val t = java.time.Instant.parse("2026-10-07T09:00:00Z")
+        val snap = ru.bgtu_voenmeh.zapara.ui.communities.CommunitySnapshot(guest = false,
+            communities = listOf(ru.bgtu_voenmeh.zapara.data.communities.Community("c1", "И831Б", "Учебная группа, 1 курс", 1, "member")),
+            selectedId = "c1",
+            homework = listOf(
+                ru.bgtu_voenmeh.zapara.data.communities.CommunityHomework("h1", "c1", "Физика", "Задачи 3.14–3.20 из Иродова", 1, t, t),
+                ru.bgtu_voenmeh.zapara.data.communities.CommunityHomework("h2", "c1", "Программирование на C++", "Лабораторная №3", 1, t, t)),
+            completions = mapOf("h2" to ru.bgtu_voenmeh.zapara.data.communities.HomeworkCompletion("h2", true, 1, t)))
+        val st = ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesComposer.compose(snap)
+        shot("45-community-homework-light") { Shell(false, Section.Community, chipOdd) { CommunitiesSection(st, {}) } }
+    }
+
     /** Карточка сообщества у старосты: участники, персонал, заявка. Имена (#104) — из поля people. */
     @Test fun s40() {
         val u1 = "3f6c2a9e-1b7d-4c8e-9a51-2d0e7b4f8c11"; val u2 = "8a1e4d27-6c3b-4f90-b2a8-5e7d1c9f0a32"

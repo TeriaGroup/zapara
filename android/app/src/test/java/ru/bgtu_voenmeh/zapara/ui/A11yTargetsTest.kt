@@ -36,4 +36,27 @@ class A11yTargetsTest {
         assertTrue(row.contains(".toggleable(row.done, enabled = canToggle, role = Role.Checkbox)"))
         assertTrue("сам чекбокс без своего обработчика", row.contains("Checkbox(row.done, null, enabled = canToggle)"))
     }
+
+    /** #105 follow-up: у каждого переключателя есть доступное имя — `label =` или `contentDescription`, иначе TalkBack: «Выкл., переключатель». */
+    @Test fun every_switch_call_has_an_accessible_name() {
+        val missing = File("src/main/java").walkTopDown().filter { it.extension == "kt" }.flatMap { file ->
+            val text = file.readText()
+            Regex("""(?<![\w.])ZSwitch\(""").findAll(text).filter { !text.substring(0, it.range.first).endsWith("fun ") }.mapNotNull { m ->
+                var depth = 0; var end = m.range.last
+                while (end < text.length) { when (text[end]) { '(' -> depth++; ')' -> { depth--; if (depth == 0) break } }; end++ }
+                val call = text.substring(m.range.first, end + 1)
+                val line = text.substring(0, m.range.first).count { it == '\n' } + 1
+                if ("label =" in call || "contentDescription" in call) null else "${file.name}:$line"
+            }
+        }.toList()
+        assertTrue(missing.joinToString(), missing.isEmpty())
+        // Текст рядом не дублирует имя переключателя для TalkBack.
+        val settings = src("ui/settings/SettingsSection.kt")
+        listOf("invertLabel", "sourceLabel", "animationsLabel", "routesLabel", "notifyLabel", "autoUpdateLabel").forEach {
+            assertTrue(it, Regex("""Text\($it, [^\n]*clearAndSetSemantics \{\}""").containsMatchIn(settings))
+            assertTrue(it, settings.contains("label = $it"))
+        }
+        assertTrue(src("ui/homework/HomeworkSection.kt").contains("label = stringResource(R.string.hw_completion_label, row.title, row.body)"))
+        assertTrue(src("ui/communities/CommunitiesSection.kt").contains("label = stringResource(R.string.hw_completion_label, item.title, item.body)"))
+    }
 }
