@@ -1,0 +1,30 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:Vograph.Desktop.Controls">
+  <!-- #19 (D-04): every date field reads and writes «дд.мм.гггг» and opens the calendar from a plain calendar button,
+       instead of «<MM/dd/yyyy>» and the Fluent day-number glyph that looked like a numeric spinner. -->
+  <Style Selector="CalendarDatePicker">
+    <Setter Property="SelectedDateFormat" Value="Custom" />
+    <Setter Property="CustomDateFormatString" Value="dd.MM.yyyy" />
+    <Setter Property="PlaceholderText" Value="дд.мм.гггг" />
+    <Setter Property="FirstDayOfWeek" Value="Monday" />
+    <Setter Property="IsTodayHighlighted" Value="True" />
+    <Setter Property="MinHeight" Value="44" />
+  </Style>
+  <Style Selector="CalendarDatePicker /template/ Button#PART_Button">
+    <Setter Property="ToolTip.Tip" Value="Открыть календарь" />
+    <Setter Property="AutomationProperties.Name" Value="Открыть календарь" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate TargetType="Button">
+        <Border Name="DateFieldButton" Background="Transparent" Padding="10,0" CornerRadius="{DynamicResource Radius.Control}">
+          <c:Icon Data="{StaticResource Icon.Calendar}" Size="18" Foreground="{DynamicResource Brush.Text2}"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="CalendarDatePicker /template/ Button#PART_Button:pointerover /template/ Border#DateFieldButton">
+    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+  </Style>
+</Styles>

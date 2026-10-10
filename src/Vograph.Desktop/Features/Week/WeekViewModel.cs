@@ -71,7 +71,7 @@ public sealed partial class WeekViewModel : ViewModelBase
     public bool HasBrowseFilters => SearchQuery.Trim().Length > 0 || OnlyDaysWithClasses;
     public bool NoWeekMatches => ShowWeekCards && VisibleDays.Count == 0 && HasBrowseFilters;
     public string BrowseCount => $"Показано дней: {VisibleDays.Count} из {Days.Count}";
-    partial void OnSearchQueryChanged(string value) => RefreshBrowse();
+    partial void OnSearchQueryChanged(string value) { RefreshBrowse(); OnPropertyChanged(nameof(ShowSearch)); }
     partial void OnOnlyDaysWithClassesChanged(bool value) => RefreshBrowse();
     [RelayCommand] private void ClearBrowseFilters() { SearchQuery = ""; OnlyDaysWithClasses = false; }
     [RelayCommand] private void OpenFirstStudyDay()
@@ -116,6 +116,7 @@ public sealed partial class WeekViewModel : ViewModelBase
 
     partial void OnParityIndexChanged(int value)
     {
+        OnPropertyChanged(nameof(WeekHeading));
         if (_suppress) return;
         ClearRefreshDiff();
         _selectedDate = _selectedDate.AddDays(7);

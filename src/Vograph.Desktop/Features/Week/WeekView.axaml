@@ -7,38 +7,68 @@
              x:DataType="w:WeekViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="32,26" Spacing="12">
-      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-        <StackPanel Margin="0,0,16,0">
-          <TextBlock Classes="display" Text="{Binding Title}" />
-          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap" />
-        </StackPanel>
-        <c:SegmentedControl Name="WeekSegment" Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding ParityIndex}" IsEnabled="{Binding !IsLoading}" />
+      <TextBlock Classes="display" Text="{Binding Title}" />
+      <!-- #19 (D-03): тулбар в одну строку. Остальные действия — в «⋯». -->
+      <Grid Name="WeekToolbar" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="0,0,0,4">
+        <Button Classes="ghost icon" Command="{Binding PreviousWeekCommand}" IsEnabled="{Binding !IsLoading}"
+                ToolTip.Tip="Предыдущая неделя" AutomationProperties.Name="Предыдущая неделя" AutomationProperties.AutomationId="Week.Prev">
+          <c:Icon Data="{StaticResource Icon.ChevronLeft}" />
+        </Button>
+        <Button Name="WeekTitle" Grid.Column="1" Classes="ghost" Padding="8,4" IsEnabled="{Binding !IsLoading}"
+                ToolTip.Tip="Выбрать неделю в календаре" AutomationProperties.Name="{Binding WeekHeading}" AutomationProperties.AutomationId="Week.Title">
+          <TextBlock Classes="subject" FontSize="17" Text="{Binding WeekHeading}" />
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedLeft">
+              <Calendar Name="WeekCalendar" FirstDayOfWeek="Monday" IsTodayHighlighted="True"
+                        SelectedDate="{Binding CalendarWeekDate, Mode=TwoWay}" />
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+        <Button Grid.Column="2" Classes="ghost icon" Command="{Binding NextWeekCommand}" IsEnabled="{Binding !IsLoading}"
+                ToolTip.Tip="Следующая неделя" AutomationProperties.Name="Следующая неделя" AutomationProperties.AutomationId="Week.Next">
+          <c:Icon Data="{StaticResource Icon.ChevronRight}" />
+        </Button>
+        <Button Grid.Column="3" Classes="pill" Content="Сегодня" Command="{Binding CurrentWeekCommand}" IsEnabled="{Binding !IsLoading}"
+                Margin="8,0,0,0" AutomationProperties.AutomationId="Week.Today" />
+        <Button Grid.Column="5" Classes="ghost icon" Classes.on="{Binding ShowSearch}" Command="{Binding ToggleSearchCommand}"
+                      ToolTip.Tip="Поиск по неделе" AutomationProperties.Name="Поиск по неделе" AutomationProperties.AutomationId="Week.Search">
+          <c:Icon Data="{StaticResource Icon.Search}" />
+        </Button>
+        <Button Grid.Column="6" Classes="ghost icon" ToolTip.Tip="Ещё" AutomationProperties.Name="Ещё действия с неделей" AutomationProperties.AutomationId="Week.More">
+          <c:Icon Data="{StaticResource Icon.More}" Size="20" Foreground="{DynamicResource Brush.Text1}" />
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedRight">
+              <MenuItem Header="Копировать неделю" Command="{Binding CopyWeekCommand}" IsEnabled="{Binding ShowWeekCards}" />
+              <MenuItem Header="Сохранить неделю в календарь (.ics)" Command="{Binding ExportWeekCommand}" IsEnabled="{Binding ShowWeekCards}" />
+              <MenuItem Header="Сравнить с другой неделей…" Command="{Binding OpenComparePickerCommand}" IsEnabled="{Binding ShowWeekCards}" />
+              <MenuItem Header="Первый день с парами" Command="{Binding OpenFirstStudyDayCommand}" IsVisible="{Binding HasStudyDay}" />
+              <Separator />
+              <MenuItem Header="Только дни с парами" ToggleType="CheckBox" IsChecked="{Binding OnlyDaysWithClasses, Mode=OneWay}" Command="{Binding ToggleOnlyDaysWithClassesCommand}" />
+              <MenuItem Header="Зачёты и экзамены на 28 дней…" Command="{Binding OpenAssessmentPickerCommand}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
       </Grid>
-
-      <WrapPanel ItemSpacing="8" LineSpacing="8">
-        <Button Content="Предыдущая неделя" Command="{Binding PreviousWeekCommand}" IsEnabled="{Binding !IsLoading}" />
-        <Button Content="Сегодня" Command="{Binding CurrentWeekCommand}" IsEnabled="{Binding !IsLoading}" />
-        <Button Content="Следующая неделя" Command="{Binding NextWeekCommand}" IsEnabled="{Binding !IsLoading}" />
-        <CalendarDatePicker SelectedDate="{Binding CalendarWeekDate}" Width="180" MinHeight="48"
-                            AutomationProperties.Name="Выбрать дату недели" IsEnabled="{Binding !IsLoading}" />
-        <Button Content="Копировать неделю" Command="{Binding CopyWeekCommand}" IsEnabled="{Binding ShowWeekCards}" />
-        <Button Content="Сохранить неделю в календарь" Command="{Binding ExportWeekCommand}" IsEnabled="{Binding ShowWeekCards}" />
-        <CalendarDatePicker SelectedDate="{Binding CompareWeekDate}" Width="180" MinHeight="48" AutomationProperties.Name="Выбрать неделю для сравнения" />
-        <Button Content="Сравнить недели" Command="{Binding CompareWeeksCommand}" IsEnabled="{Binding ShowWeekCards}" />
-        <TextBlock Classes="muted" Text="{Binding WeekRange}" VerticalAlignment="Center" />
+      <TextBox Text="{Binding SearchQuery, Mode=TwoWay}" PlaceholderText="Предмет, преподаватель или аудитория" IsVisible="{Binding ShowSearch}"
+               AutomationProperties.Name="Поиск по выбранной неделе" />
+      <WrapPanel ItemSpacing="8" LineSpacing="8" IsVisible="{Binding HasBrowseFilters}">
+        <TextBlock Classes="muted caption" Text="{Binding BrowseCount}" VerticalAlignment="Center" />
+        <Button Content="Сбросить фильтры" Command="{Binding ClearBrowseFiltersCommand}" />
       </WrapPanel>
+      <Border Classes="card" IsVisible="{Binding ShowComparePicker}">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="subject" Text="Сравнить с другой неделей" />
+          <WrapPanel ItemSpacing="8" LineSpacing="8">
+            <CalendarDatePicker SelectedDate="{Binding CompareWeekDate}" Width="180" AutomationProperties.Name="Выбрать неделю для сравнения" />
+            <Button Classes="primary" Content="Сравнить" Command="{Binding CompareWeeksCommand}" IsEnabled="{Binding ShowWeekCards}" />
+            <Button Content="Закрыть" Command="{Binding OpenComparePickerCommand}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
       <TextBlock Text="Загружаем выбранную неделю…" IsVisible="{Binding ShowFirstLoading}" />
       <Border Classes="card" IsVisible="{Binding ShowWeekComparison}"><StackPanel Spacing="8"><TextBlock Text="{Binding ComparisonText}" TextWrapping="Wrap" /><Button Content="Скрыть сравнение" Command="{Binding HideWeekComparisonCommand}" HorizontalAlignment="Left" /></StackPanel></Border>
       <Border Classes="card" IsVisible="{Binding ShowRefreshDiff}"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Изменения видимой недели" /><TextBlock Text="{Binding RefreshDiffText}" TextWrapping="Wrap" /><Button Content="Скрыть изменения" Command="{Binding HideRefreshDiffCommand}" HorizontalAlignment="Left" /></StackPanel></Border>
-      <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Ближайшие зачёты и экзамены" /><TextBlock Classes="muted caption" Text="Фактические пары вашей группы на 28 дней из сохранённого расписания." TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><CalendarDatePicker SelectedDate="{Binding AssessmentStartDate}" Width="180" AutomationProperties.Name="Дата начала обзора оценок" /><Button Content="Показать 28 дней" Command="{Binding ShowAssessmentsCommand}" /></WrapPanel><StackPanel Spacing="6" IsVisible="{Binding ShowAssessmentBoard}"><TextBlock Text="{Binding AssessmentStatus}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Assessments}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="w:AssessmentChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="48" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="Скрыть обзор" Command="{Binding HideAssessmentsCommand}" HorizontalAlignment="Left" /></StackPanel></StackPanel></Border>
-      <TextBox Text="{Binding SearchQuery, Mode=TwoWay}" PlaceholderText="Предмет, преподаватель или аудитория"
-               AutomationProperties.Name="Поиск по выбранной неделе" />
-      <WrapPanel ItemSpacing="8" LineSpacing="8">
-        <c:Switch Content="Только дни с парами" IsChecked="{Binding OnlyDaysWithClasses}" />
-        <Button Content="Первый день с парами" Command="{Binding OpenFirstStudyDayCommand}" IsVisible="{Binding HasStudyDay}" />
-        <Button Content="Сбросить фильтры" Command="{Binding ClearBrowseFiltersCommand}" IsVisible="{Binding HasBrowseFilters}" />
-        <TextBlock Classes="muted caption" Text="{Binding BrowseCount}" VerticalAlignment="Center" />
-      </WrapPanel>
+      <Border Classes="card" IsVisible="{Binding ShowAssessmentPicker}"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Ближайшие зачёты и экзамены" /><TextBlock Classes="muted caption" Text="Фактические пары вашей группы на 28 дней из сохранённого расписания." TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><CalendarDatePicker SelectedDate="{Binding AssessmentStartDate}" Width="180" AutomationProperties.Name="Дата начала обзора оценок" /><Button Content="Показать 28 дней" Command="{Binding ShowAssessmentsCommand}" /></WrapPanel><StackPanel Spacing="6" IsVisible="{Binding ShowAssessmentBoard}"><TextBlock Text="{Binding AssessmentStatus}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Assessments}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="w:AssessmentChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="48" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="Скрыть обзор" Command="{Binding HideAssessmentsCommand}" HorizontalAlignment="Left" /></StackPanel></StackPanel></Border>
       <TextBlock Text="На этой неделе совпадений нет" IsVisible="{Binding NoWeekMatches}" />
       <StackPanel Spacing="8" IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
         <TextBlock Text="{Binding LoadError}" TextWrapping="Wrap" />

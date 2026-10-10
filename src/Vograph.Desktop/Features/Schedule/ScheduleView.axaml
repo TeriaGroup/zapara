@@ -15,7 +15,24 @@
                    Margin="0,0,16,0" AutomationProperties.AutomationId="Schedule.Title" />
         <TextBlock Grid.Row="1" Classes="muted" Text="{Binding DayLine}" Margin="0,4,0,0" TextWrapping="Wrap"
                    AutomationProperties.AutomationId="Schedule.Subtitle" />
-        <WrapPanel Grid.Row="2" ItemSpacing="8" LineSpacing="8" Margin="0,12,0,0" VerticalAlignment="Center">
+        <!-- #19 (D-03): тулбар в одну строку — ‹ день › «К сегодня», дата, поиск и «⋯». -->
+        <DockPanel Grid.Row="2" Margin="0,12,0,0" LastChildFill="True">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <Button Classes="ghost icon" Classes.on="{Binding ShowLessonSearch}" Command="{Binding ToggleLessonSearchCommand}"
+                        ToolTip.Tip="Поиск по дню" AutomationProperties.Name="Поиск по дню" AutomationProperties.AutomationId="Schedule.Search">
+            <c:Icon Data="{StaticResource Icon.Search}" />
+          </Button>
+          <Button Classes="ghost icon" ToolTip.Tip="Ещё" AutomationProperties.Name="Ещё действия с днём" AutomationProperties.AutomationId="Schedule.More">
+            <c:Icon Data="{StaticResource Icon.More}" Size="20" Foreground="{DynamicResource Brush.Text1}" />
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedRight">
+                <MenuItem Header="Копировать день" Command="{Binding CopyDayCommand}" />
+                <MenuItem Header="{loc:T toDeadlines}" Command="{Binding JumpDeadlinesCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
+        <WrapPanel ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
           <Button Classes="ghost icon" Command="{Binding PrevDayCommand}" ToolTip.Tip="{loc:T prevDay}"
                   AutomationProperties.AutomationId="Schedule.Prev" AutomationProperties.Name="{loc:T prevDay}">
             <c:Icon Data="{StaticResource Icon.ChevronLeft}" />
@@ -29,20 +46,20 @@
                   AutomationProperties.AutomationId="Schedule.Today" />
           <CalendarDatePicker SelectedDate="{Binding CalendarDate}" MinHeight="48" Width="180"
                               AutomationProperties.Name="Выбрать дату расписания" AutomationProperties.AutomationId="Schedule.Calendar" />
-          <Button Content="Копировать день" Command="{Binding CopyDayCommand}" />
         </WrapPanel>
+        </DockPanel>
       </Grid>
       <TextBlock Text="Загружаем выбранный день…" IsVisible="{Binding ShowFirstDayLoading}" />
       <TextBlock Text="{Binding ScheduleLoadError}" IsVisible="{Binding ScheduleLoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" />
 
-      <TextBox Text="{Binding LessonSearch, Mode=TwoWay}" PlaceholderText="Предмет, преподаватель или аудитория этого дня" AutomationProperties.Name="Поиск по выбранному дню" />
+      <TextBox Text="{Binding LessonSearch, Mode=TwoWay}" PlaceholderText="Предмет, преподаватель или аудитория этого дня" AutomationProperties.Name="Поиск по выбранному дню" IsVisible="{Binding ShowLessonSearch}" />
       <WrapPanel ItemSpacing="8" IsVisible="{Binding HasLessonSearch}"><Button Content="Очистить поиск" Command="{Binding ClearLessonSearchCommand}" /><TextBlock Text="Ничего не найдено в выбранном дне" IsVisible="{Binding NoLessonMatches}" VerticalAlignment="Center" /></WrapPanel>
       <ItemsControl ItemsSource="{Binding MatchingLessons}" IsVisible="{Binding HasLessonSearch}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="s:LessonRowViewModel"><Button Classes="ghost" Command="{Binding $parent[UserControl].((s:ScheduleViewModel)DataContext).OpenSearchResultCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"><StackPanel Orientation="Horizontal" Spacing="8"><TextBlock Text="{Binding TimeStart}" /><TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding RoomText}" /></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
       <Grid Name="PlannerColumns" ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="16" RowSpacing="12"><StackPanel Name="PlannerDates">      <ItemsControl ItemsSource="{Binding DateChoices}" Margin="0,0,0,8">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="8" LineSpacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="s:PlannerDayChoice">
-            <c:SelectionButton IsChecked="{Binding IsSelected,Mode=OneWay}" Classes="secondary" Classes.primary="{Binding IsSelected}" Command="{Binding SelectCommand}"
+            <c:SelectionButton IsChecked="{Binding IsSelected,Mode=OneWay}" Classes.secondary="{Binding !IsSelected}" Classes.primary="{Binding IsSelected}" Command="{Binding SelectCommand}"
                     Padding="10,8" MinWidth="72" AutomationProperties.Name="{Binding AccessibleName}">
               <StackPanel Spacing="2" HorizontalAlignment="Center">
                 <TextBlock Text="{Binding DayLabel}" FontSize="12" HorizontalAlignment="Center" />
@@ -53,8 +70,8 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-</StackPanel><StackPanel Name="PlannerMain" Grid.Row="1" Spacing="12">      <TextBlock Classes="muted caption" Text="{Binding DaySummary}" IsVisible="{Binding DaySummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-      <TextBlock Classes="muted caption" Text="{Binding WorkloadSpan}" IsVisible="{Binding WorkloadSpan, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+</StackPanel><StackPanel Name="PlannerMain" Grid.Row="1" Spacing="12">      <!-- #19 (D-05): одна строка метаданных дня вместо «Занятия …» и «С … до … · перерывы: …». -->
+      <TextBlock Classes="muted" Text="{Binding DayMeta}" IsVisible="{Binding HasDayMeta}" AutomationProperties.AutomationId="Schedule.DayMeta" />
       <TextBlock Classes="muted caption" Text="{Binding SourceSummary}" TextWrapping="Wrap" />
       <StackPanel Spacing="6" IsVisible="{Binding HasOverlaps}">
         <TextBlock Text="Пересекаются пары:" Classes="subject" />
@@ -67,7 +84,29 @@
         <ItemsControl ItemsSource="{Binding TransferWarnings}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
       </StackPanel>
       <TextBlock Classes="subject" Text="{Binding DayPriorityCaption}" IsVisible="{Binding ShowDayState}" />
-      <WrapPanel ItemSpacing="8"><Button Content="К ближайшей паре" Command="{Binding JumpNearestLessonCommand}" IsVisible="{Binding HasLessons}" /><Button Content="{loc:T toDeadlines}" Command="{Binding JumpDeadlinesCommand}" /></WrapPanel>
+      <!-- #19 (D-05): под «Сейчас / Следующая пара» — сама пара; нажатие раскрывает её карточку в списке. -->
+      <Panel IsVisible="{Binding HasHeroLesson}">
+      <Button Name="ScheduleHero" Classes="ghost" Padding="0" DataContext="{Binding HeroLesson}" x:DataType="s:LessonRowViewModel"
+              Command="{Binding FocusInDayCommand}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+              AutomationProperties.AutomationId="Schedule.Hero" AutomationProperties.Name="{Binding DisplayName}">
+        <Border Classes="card next" Padding="16,12">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <StackPanel VerticalAlignment="Center" Spacing="2">
+              <TextBlock Classes="subject tnum" Text="{Binding TimeStart}" />
+              <TextBlock Classes="muted caption tnum" Text="{Binding TimeEnd}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Margin="16,0" VerticalAlignment="Center" Spacing="2">
+              <TextBlock Classes="subject" Text="{Binding DisplayName}" TextWrapping="Wrap" />
+              <TextBlock Classes="muted caption" Text="{Binding TeacherLine}" TextWrapping="Wrap" />
+            </StackPanel>
+            <Border Grid.Column="2" Classes="chip room" VerticalAlignment="Center">
+              <TextBlock Classes="tnum" Text="{Binding RoomText}" />
+            </Border>
+          </Grid>
+        </Border>
+      </Button>
+      </Panel>
       <TextBlock Classes="muted caption" Text="{Binding DeadlineAttention}" IsVisible="{Binding HasDeadlineAttention}" />
       <TextBlock Classes="muted caption" Text="{Binding LessonJumpStatus}" IsVisible="{Binding LessonJumpStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       <c:Switch Content="Осталось сегодня" IsChecked="{Binding RemainingToday}" IsVisible="{Binding CanFilterRemainingToday}" />
@@ -108,9 +147,9 @@
         </StackPanel>
       </Panel>
       <Button Classes="secondary" Command="{Binding OpenNextStudyDayCommand}" IsVisible="{Binding HasNextStudyDate}" HorizontalAlignment="Left"><TextBlock Text="{Binding NextStudyCaption}" TextWrapping="Wrap" /></Button>
-</StackPanel>      <Border Name="PlannerDeadlines" Grid.Row="2" Classes="card" Focusable="True" AutomationProperties.Name="Ближайшие сроки"><StackPanel Spacing="8">
+</StackPanel>      <Border Name="PlannerDeadlines" Grid.Row="2" Classes="card" Focusable="True" VerticalAlignment="Top" AutomationProperties.Name="Ближайшие сроки"><StackPanel Spacing="8">
         <TextBlock Classes="subject" Text="{Binding DeadlineTitle}" />
-        <ItemsControl ItemsSource="{Binding Deadlines}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="s:PlannerDeadlineRow">
+        <ItemsControl ItemsSource="{Binding Deadlines}" IsVisible="{Binding HasDeadlineRows}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="s:PlannerDeadlineRow">
           <Grid ColumnDefinitions="48,*" Margin="0,4">
             <CheckBox IsChecked="{Binding Done,Mode=OneWay}" Command="{Binding ToggleCommand}" AutomationProperties.Name="{Binding CompletionCaption}" VerticalAlignment="Top" />
             <StackPanel Grid.Column="1" Spacing="4">
