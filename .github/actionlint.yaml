@@ -1,0 +1,4 @@
+# Custom labels of the organisation's self-hosted runners (docs/CI.md).
+self-hosted-runner:
+  labels:
+    - docker
