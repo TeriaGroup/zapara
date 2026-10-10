@@ -49,6 +49,7 @@ class AccountUserResource extends Resource
                 ->password()
                 ->revealable()
                 ->required(fn (string $operation): bool => $operation === 'create')
+                ->helperText(fn (string $operation): string => $operation === 'create' ? '12–128 символов.' : '12–128 символов. Оставьте пустым, чтобы не менять.')
                 ->dehydrated(fn (?string $state): bool => filled($state))
                 ->rule(fn (string $operation): PasswordRule => new PasswordRule($operation === 'create')),
         ]);
@@ -62,15 +63,23 @@ class AccountUserResource extends Resource
                 TextColumn::make('display_name')->label('Отображаемое имя')->searchable(),
                 TextColumn::make('status')
                     ->label('Статус')
+                    ->badge()
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        'active' => 'активен',
-                        'disabled' => 'отключён',
-                        'deleting' => 'удаляется',
+                        'active' => 'Активен',
+                        'disabled' => 'Отключён',
+                        'deleting' => 'Удаляется',
                         default => (string) $state,
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'active' => 'success',
+                        'disabled' => 'danger',
+                        default => 'gray',
                     }),
             ])
             ->defaultSort('created_at', 'desc')
             ->stackedOnMobile()
+            // Без «Создать … для старта»: кнопка создания уже есть в заголовке страницы.
+            ->emptyStateDescription(null)
             ->recordActions([
                 Action::make('edit')->label('Изменить')->url(fn (AccountUser $record): string => static::getUrl('edit', ['record' => $record])),
                 ActionGroup::make([

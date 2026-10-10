@@ -46,6 +46,8 @@ class AdminPanelProvider extends PanelProvider
             ->pages([
                 Dashboard::class,
             ])
+            // Контраст полей форм (#25); полные имена классов, чтобы не трогать блок use (его меняют #4 и #26).
+            ->renderHook(\Filament\View\PanelsRenderHook::HEAD_END, fn (): \Illuminate\Contracts\View\View => view('filament.admin-forms'))
             ->authenticatedRoutes(function (): void {
                 Route::get('/support-files/{id}', [\App\Http\Controllers\SupportFileController::class, 'show'])
                     ->name('support-file');

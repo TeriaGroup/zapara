@@ -114,7 +114,7 @@ class PanelTest extends TestCase
         Livewire::test(Login::class)
             ->fillForm(['username' => $member->username, 'password' => self::PASSWORD])
             ->call('authenticate')
-            ->assertHasFormErrors(['username']);
+            ->assertHasErrors(['data.credentials']);
         $this->assertGuest();
 
         $this->actingAs($member);
@@ -184,8 +184,10 @@ class PanelTest extends TestCase
                 's3_bucket' => 'zapara-bucket',
                 's3_access_key' => 'AKIAEXAMPLE',
                 's3_secret' => $s3Secret,
-                'quota_group_bytes' => '1073741824',
-                'quota_user_bytes' => '524288000',
+                'quota_group_amount' => '1',
+                'quota_group_unit' => 'gb',
+                'quota_user_amount' => '500',
+                'quota_user_unit' => 'mb',
             ])
             ->call('save')
             ->assertHasNoFormErrors();
@@ -203,9 +205,13 @@ class PanelTest extends TestCase
             's3_region' => 'ru-central1',
             's3_bucket' => 'zapara-bucket',
             's3_access_key' => 'AKIAEXAMPLE',
-            'quota_group_bytes' => '1073741824',
-            'quota_user_bytes' => '524288000',
+            'quota_group_amount' => '1',
+            'quota_group_unit' => 'gb',
+            'quota_user_amount' => '500',
+            'quota_user_unit' => 'mb',
         ]);
+        $this->assertSame('1073741824', OperatorSettings::read('quota_group_bytes'));
+        $this->assertSame('524288000', OperatorSettings::read('quota_user_bytes'));
         $html = (string) $reloaded->html();
         $this->assertStringNotContainsString($vkSecret, $html);
         $this->assertStringNotContainsString($yandexSecret, $html);
@@ -235,8 +241,10 @@ class PanelTest extends TestCase
                 's3_bucket' => 'zapara-bucket',
                 's3_access_key' => 'AKIAEXAMPLE',
                 's3_secret' => '',
-                'quota_group_bytes' => '1000',
-                'quota_user_bytes' => '500',
+                'quota_group_amount' => '0.5',
+                'quota_group_unit' => 'gb',
+                'quota_user_amount' => '300',
+                'quota_user_unit' => 'mb',
             ])
             ->call('save')
             ->assertHasNoFormErrors();
@@ -245,8 +253,8 @@ class PanelTest extends TestCase
         $this->assertSame($s3Secret, OperatorSettings::read('s3_secret'));
         $this->assertSame('vk-app-2', OperatorSettings::read('vk_client_id'));
         $this->assertSame('false', OperatorSettings::read('vk_enabled'));
-        $this->assertSame('1000', OperatorSettings::read('quota_group_bytes'));
-        $this->assertSame('500', OperatorSettings::read('quota_user_bytes'));
+        $this->assertSame('536870912', OperatorSettings::read('quota_group_bytes'));
+        $this->assertSame('314572800', OperatorSettings::read('quota_user_bytes'));
 
         $server = self::dotnet('Panel_settings_drive_capabilities');
         $this->assertSame(0, $server['code'], self::redact($server['output']));
@@ -545,15 +553,15 @@ class PanelTest extends TestCase
         Livewire::test(ListAccountUsers::class)
             ->searchTable($active->username)
             ->assertCanSeeTableRecords([$active])
-            ->assertSee('активен');
+            ->assertSee('Активен');
         Livewire::test(ListAccountUsers::class)
             ->searchTable($disabled->username)
             ->assertCanSeeTableRecords([$disabled])
-            ->assertSee('отключён');
+            ->assertSee('Отключён');
         Livewire::test(ListAccountUsers::class)
             ->searchTable($deleting->username)
             ->assertCanSeeTableRecords([$deleting])
-            ->assertSee('удаляется');
+            ->assertSee('Удаляется');
 
         $this->assertSame('active', DB::table($accounts.'.users')->where('user_id', $active->user_id)->value('status'));
         $this->assertSame('disabled', DB::table($accounts.'.users')->where('user_id', $disabled->user_id)->value('status'));
