@@ -20,7 +20,11 @@ public class AutoUpdateService : IDisposable
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
     }
 
-    public record UpdateInfo(string Tag, string HtmlUrl, string? ZipUrl, string PublishedAt);
+    /// <param name="ZipName">Asset name of the archive, as listed in SHA256SUMS.</param>
+    /// <param name="ChecksumsUrl">The release's SHA256SUMS asset, if any.</param>
+    /// <param name="SignatureUrl">The release's SHA256SUMS.sig asset, if any.</param>
+    public record UpdateInfo(string Tag, string HtmlUrl, string? ZipUrl, string PublishedAt,
+        string? ZipName = null, string? ChecksumsUrl = null, string? SignatureUrl = null);
 
     public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows", CancellationToken ct = default, string? repo = null, string? token = null)
     {
@@ -45,25 +49,52 @@ public class AutoUpdateService : IDisposable
             if (!TagMatchesChannel(tag, pfx)) continue;
             var html = el.GetProperty("html_url").GetString() ?? $"https://github.com/{Owner}/{repoName}/releases/tag/{tag}";
             var published = el.TryGetProperty("published_at", out var p) ? p.GetString() ?? "" : "";
-            string? zip = null;
+            string? sums = null, sig = null;
+            var packages = new List<(string Name, string Url)>();
             if (el.TryGetProperty("assets", out var assets))
             {
                 foreach (var a in assets.EnumerateArray())
                 {
                     var name = a.GetProperty("name").GetString() ?? "";
-                    var ok = wantZip
-                        ? name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
-                        : name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase);
-                    if (!ok) continue;
-                    zip = a.GetProperty("browser_download_url").GetString();
-                    if (name.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) break;
+                    var assetUrl = a.GetProperty("browser_download_url").GetString();
+                    if (assetUrl is null) continue;
+                    if (name == UpdateVerifier.ChecksumsAssetName) { sums = assetUrl; continue; }
+                    if (name == UpdateVerifier.SignatureAssetName) { sig = assetUrl; continue; }
+                    packages.Add((name, assetUrl));
                 }
             }
-            if (zip == null) continue;
-            var cand = new UpdateInfo(tag, html, zip, published);
+            var picked = PickAsset(packages, tag, wantZip);
+            if (picked is null) continue;
+            var (zipName, zip) = picked.Value;
+            var cand = new UpdateInfo(tag, html, zip, published, zipName, sums, sig);
             if (best == null || BetterTag(best.Tag, tag, pfx) == tag) best = cand;
         }
         return best;
+    }
+
+    /// <summary>Windows asset name carrying the release version: ZAPARA_win-x64_2.1.43.zip.</summary>
+    public static string VersionedWindowsAssetName(string tag) =>
+        ParseVersion(tag) is { } v ? $"ZAPARA_win-x64_{v.ToString(3)}.zip" : "ZAPARA_win-x64.zip";
+
+    public const string LegacyWindowsAssetName = "ZAPARA_win-x64.zip";
+
+    /// <summary>Windows: the versioned archive for this tag, then the legacy ZAPARA_win-x64.zip, then (older
+    /// releases) the first zip with ZAPARA in its name or the last zip. Android: the first ZAPARA apk or the last apk.</summary>
+    public static (string Name, string Url)? PickAsset(IReadOnlyList<(string Name, string Url)> assets, string tag, bool wantZip)
+    {
+        var ext = wantZip ? ".zip" : ".apk";
+        var candidates = assets.Where(a => a.Name.EndsWith(ext, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (candidates.Count == 0) return null;
+        if (wantZip)
+        {
+            var versioned = VersionedWindowsAssetName(tag);
+            foreach (var preferred in new[] { versioned, LegacyWindowsAssetName })
+                foreach (var a in candidates)
+                    if (string.Equals(a.Name, preferred, StringComparison.OrdinalIgnoreCase)) return a;
+        }
+        foreach (var a in candidates)
+            if (a.Name.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) return a;
+        return candidates[^1];
     }
 
     public static string CurrentTagWindows => "windows-v2.1.42";
@@ -105,6 +136,29 @@ public class AutoUpdateService : IDisposable
         }
     }
 
+    /// <summary>Download a small release asset (SHA256SUMS, its signature) into memory, refusing anything larger
+    /// than <paramref name="maxBytes"/>.</summary>
+    public async Task<byte[]> DownloadSmallAsync(string url, int maxBytes, CancellationToken ct = default, string? token = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrWhiteSpace(token))
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        resp.EnsureSuccessStatusCode();
+        if (resp.Content.Headers.ContentLength > maxBytes) throw new InvalidDataException("asset too large");
+        using var src = await resp.Content.ReadAsStreamAsync(ct);
+        using var dst = new MemoryStream();
+        var buf = new byte[8192];
+        int n;
+        while ((n = await src.ReadAsync(buf, ct)) > 0)
+        {
+            if (dst.Length + n > maxBytes) throw new InvalidDataException("asset too large");
+            dst.Write(buf, 0, n);
+        }
+        return dst.ToArray();
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -123,6 +177,17 @@ public class AutoUpdateService : IDisposable
         var curPfx = current.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         var candPfx = candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         return candPfx && !curPfx ? candidate : current;
+    }
+
+    /// <summary>The version a release tag or a bare version string names («windows-v2.1.43», «v2.1.43», «2.1.43»),
+    /// padded to four components so 2.1.43 equals 2.1.43.0. Null when it is not a version.</summary>
+    public static Version? ParseVersion(string? tagOrVersion)
+    {
+        if (string.IsNullOrWhiteSpace(tagOrVersion)) return null;
+        var t = tagOrVersion.Trim();
+        t = t.Contains("-v") ? t[(t.IndexOf("-v") + 2)..] : t.Contains('-') ? t[(t.IndexOf('-') + 1)..] : t;
+        if (!Version.TryParse(t.TrimStart('v', 'V'), out var v)) return null;
+        return new Version(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
     }
 
     public static bool IsNewer(string latestTag, string currentTag)

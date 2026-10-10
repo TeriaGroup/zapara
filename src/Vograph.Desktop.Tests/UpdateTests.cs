@@ -18,7 +18,8 @@ public class UpdateTests : UiTest
 {
     private static readonly DateTime Sun6 = new(2026, 9, 6, 15, 0, 0);
     private static readonly Loc Ru = new(new I18nService("ru"));
-    private static AutoUpdateService.UpdateInfo Newer => new("windows-v2.2.0", "https://github.com/0NiLle0/zapara/releases/tag/windows-v2.2.0", "https://example.test/ZAPARA_windows-v2.2.0_win-x64.zip", "2026-09-05T10:00:00Z");
+    private static AutoUpdateService.UpdateInfo Newer => new("windows-v2.2.0", "https://github.com/0NiLle0/zapara/releases/tag/windows-v2.2.0", "https://example.test/ZAPARA_windows-v2.2.0_win-x64.zip", "2026-09-05T10:00:00Z",
+        "ZAPARA_windows-v2.2.0_win-x64.zip", "https://example.test/SHA256SUMS", "https://example.test/SHA256SUMS.sig");
 
     private static (UpdateCheckViewModel Vm, FakeUpdateSource Source, List<string> Installed) Make(TestDb db)
     {
@@ -28,7 +29,8 @@ public class UpdateTests : UiTest
         var vm = new UpdateCheckViewModel(db.Services, () => Sun6, Path.Combine(db.Dir, "updates"))
         {
             Installer = installed.Add,
-            Delay = _ => Task.CompletedTask
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging")
         };
         return (vm, source, installed);
     }
@@ -150,7 +152,8 @@ public class UpdateTests : UiTest
         {
             Installer = installed.Add,
             Shutdown = () => { },
-            Delay = _ => Task.CompletedTask
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging")
         };
         await vm1.RunStartupFlowAsync();
         Assert.Single(installed);
@@ -160,7 +163,8 @@ public class UpdateTests : UiTest
         {
             Installer = installed.Add,
             Shutdown = () => { },
-            Delay = _ => Task.CompletedTask
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging")
         };
         await vm2.RunStartupFlowAsync();
         Assert.Single(installed); // the installer is not called a second time
