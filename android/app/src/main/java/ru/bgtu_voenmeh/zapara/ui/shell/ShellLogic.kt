@@ -22,5 +22,6 @@ object ShellLogic {
     }
 
     fun chip(groupName: String, odd: Boolean, copy: ru.bgtu_voenmeh.zapara.ui.UiCopy): String =
-        copy.get("chip_group", groupName, copy.get(if (odd) "chip_odd" else "chip_even"))
+        // #108 / AN-23: чётность полностью («И831Б · чётная»), как на web и desktop.
+        copy.get("chip_group", groupName, copy.get(if (odd) "week_odd" else "week_even").lowercase(java.util.Locale("ru")))
 }

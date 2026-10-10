@@ -204,7 +204,8 @@ object ScheduleComposer {
         val nextKnown = if (rows.isEmpty()) (1L..60L).map { date.plusDays(it) }.firstOrNull {
             Schedule.lessonsForDate(visible, ctx.groupId, it, ctx.periodStart, ctx.weekCount, ctx.invert).isNotEmpty()
         } else null
-        return DayPage(date, isToday, caption, rows, hint, isSunday, nextKnownDate = nextKnown)
+        return DayPage(date, isToday, caption, rows, hint, isSunday, nextKnownDate = nextKnown,
+            weekLine = LessonFormat.weekLine(odd, weekNumber, copy))
     }
 
     private fun nextHint(

@@ -28,7 +28,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
@@ -44,11 +43,11 @@ fun DateStrip(selected: LocalDate, today: LocalDate, pages: Map<LocalDate, DayPa
     val calendarTheme = if (Zapara.colors.isDark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light
     var calendarOpen by remember { mutableStateOf(false) }
     val largeText = LocalDensity.current.fontScale >= 1.5f
-    val labels = listOf(uiText(R.string.space_day_1), uiText(R.string.space_day_2), uiText(R.string.space_day_3))
-    Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).padding(bottom = Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        val quickDay = (0..2).firstOrNull { today.plusDays(it.toLong()) == selected } ?: -1
-        val pickQuickDay: (Int) -> Unit = { offset -> onQuickDay?.invoke(offset) ?: onPick(today.plusDays(offset.toLong())) }
-        ZSegmented(labels, quickDay, pickQuickDay, "Schedule.QuickDays")
+    val todayLabel = uiText(R.string.space_day_1)
+    // #108 / AN-08, AN-23: один переключатель дня (полоса дат), 8 dp под шапкой. Сегмент «Сегодня / Завтра /
+    // Послезавтра» дублировал полосу дат; возврат к сегодняшнему дню — кнопка «Сегодня» у стрелок.
+    Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).padding(top = Zapara.space.s, bottom = Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        val backToToday: () -> Unit = { onQuickDay?.invoke(0) ?: onPick(today) }
         ZCard(Modifier.fillMaxWidth(), padded = false) {
         Column(Modifier.padding(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -59,6 +58,7 @@ fun DateStrip(selected: LocalDate, today: LocalDate, pages: Map<LocalDate, DayPa
                     selected.year, selected.monthValue - 1, selected.dayOfMonth).also { dialog -> dialog.setOnDismissListener { calendarOpen = false }; dialog.show() }
             }, modifier = Modifier.weight(1f), ghost = true, quiet = !calendarOpen, tag = "Schedule.Calendar", leadingIcon = R.drawable.ic_calendar)
             ZIconButton(R.drawable.ic_chevron_right, uiText(R.string.space_day_6), { onPick(selected.plusDays(1)) }, "Schedule.Next")
+            if (selected != today) ZButton(todayLabel, backToToday, ghost = true, quiet = true, tag = "Schedule.BackToToday")
         }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
         val scrollDates = largeText || maxWidth < 56.dp * visibleCount + Zapara.space.xs * (visibleCount - 1)

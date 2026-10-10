@@ -59,7 +59,8 @@ fun LessonCard(
     val hw = if (!expanded && lesson.homework.size > 2) lesson.homework.take(2) else lesson.homework
     ZCard(
         modifier = modifier.fillMaxWidth().alpha(if (lesson.isPast) 0.6f else 1f),
-        onClick = { if (lesson.homework.size > 2) expanded = !expanded },
+        // #108 / AN-15: нажатие открывает лист пары (раньше — только раскрывало домашку, для этого есть свой чип).
+        onClick = onLongClick,
         onLongClick = onLongClick,
         tag = "Lesson.Card.${lesson.index}"
     ) {
@@ -70,7 +71,7 @@ fun LessonCard(
             verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
         ) {
             Text(
-                "${lesson.timeStart} – ${lesson.timeEnd}",
+                "${lesson.timeStart}–${lesson.timeEnd}",
                 style = Zapara.typography.bodyStrong,
                 color = c.text1,
                 modifier = Modifier.align(Alignment.CenterVertically).semantics {

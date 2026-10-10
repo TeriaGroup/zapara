@@ -79,7 +79,8 @@ data class DayPage(
     val deadlines: List<HomeworkRowUi> = emptyList(),
     val dataState: String? = null,
     val nextKnownDate: LocalDate? = null,
-    val transfers: List<LessonTransfer> = emptyList()
+    val transfers: List<LessonTransfer> = emptyList(),
+    val weekLine: String = ""
 )
 
 data class LessonTransfer(val from: String, val to: String, val destinationRaw: String,

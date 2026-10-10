@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #108: «Сегодня», лист пары, шапка (AN-08, AN-15, AN-23). -->
+<resources>
+    <string name="schedule_week_line">%1$s, %2$d-я неделя</string>
+    <string name="schedule_now_hero">Сейчас · %1$s · %2$s · до %3$s</string>
+    <string name="schedule_now_hero_no_room">Сейчас · %1$s · до %2$s</string>
+    <string name="schedule_show_past">Прошедшие пары: %1$d · показать</string>
+    <string name="schedule_hide_past">Скрыть прошедшие пары</string>
+    <string name="lesson_rename_mine">Переименовать у меня</string>
+</resources>

@@ -20,8 +20,8 @@ class ShellLogicTest {
     }
 
     @Test fun group_chip_text() {
-        assertEquals("А863С · нечёт.", ShellLogic.chip("А863С", odd = true, XmlCopy))
-        assertEquals("А863С · чёт.", ShellLogic.chip("А863С", odd = false, XmlCopy))
+        assertEquals("А863С · нечётная", ShellLogic.chip("А863С", odd = true, XmlCopy))
+        assertEquals("А863С · чётная", ShellLogic.chip("А863С", odd = false, XmlCopy))
     }
 
     @Test fun homework_badge_counts_due_today_or_tomorrow() {
