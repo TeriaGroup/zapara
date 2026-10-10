@@ -34,20 +34,44 @@ const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const mobile = readFileSync(new URL("./mobile-shell.css", import.meta.url), "utf8");
 function lum(hex: string) { const c = hex.replace("#", "").match(/../g)!.map(v => parseInt(v, 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
 function ratio(a: string, b: string) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); }
-function block(selector: string) { const at = css.indexOf(selector + " {"); assert.ok(at >= 0, selector); return css.slice(at, css.indexOf("}", at)); }
-function cssVar(scope: string, name: string) { const m = block(scope).match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`)); assert.ok(m, `${scope} ${name}`); return m![1]; }
+// Значения CSS-переменных по каскаду: tokens.css (#50, если он есть), затем styles.css; последнее объявление выигрывает.
+// Светлая тема наследует :root. var(--x, запасное) раскрывается через объявленный токен, иначе берётся запасное значение —
+// так тест работает и до #50 (в styles.css шестнадцатеричные цвета), и после (--canvas: var(--zp-surface-0)).
+const cssFiles = ["./tokens.css", "./styles.css"].flatMap(file => { try { return [readFileSync(new URL(file, import.meta.url), "utf8")]; } catch { return []; } });
+function declarations(scope: string): Map<string, string> {
+  const esc = scope.replace(/[[\]"().*]/g, "\\$&"), found = new Map<string, string>();
+  for (const text of cssFiles) for (const m of text.matchAll(new RegExp(`(?:^|\\n|\\})\\s*${esc}\\s*\\{([^}]*)\\}`, "g")))
+    for (const d of m[1].matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);?/g)) found.set(d[1], d[2].trim());
+  return found;
+}
+function resolve(scope: string, value: string, depth = 0): string | null {
+  assert.ok(depth < 10, `цикл в ${value}`);
+  const hex = value.match(/^#[0-9a-f]{6}$/i); if (hex) return value.toLowerCase();
+  const ref = value.match(/^var\(\s*--([a-z0-9-]+)\s*(?:,\s*(.+))?\)$/);
+  if (!ref) return null;
+  const own = lookup(scope, ref[1]);
+  if (own !== undefined) return resolve(scope, own, depth + 1);
+  return ref[2] ? resolve(scope, ref[2], depth + 1) : null;
+}
+function lookup(scope: string, name: string): string | undefined {
+  return declarations(scope).get(name) ?? (scope === ":root" ? undefined : declarations(":root").get(name));
+}
+/** Действующий цвет переменной в теме (с раскрытием var()). */
+function cssVar(scope: string, name: string) { const raw = lookup(scope, name); assert.ok(raw, `${scope} ${name}`); const v = resolve(scope, raw!); assert.ok(v, `${scope} ${name}: ${raw}`); return v!; }
+/** Запасной цвет из var(--zp-…, #hex) — его видят до #50 и если токена нет. */
 function fallback(scope: string, name: string) {
-  const esc = scope.replace(/[[\]"().*]/g, "\\$&");
-  const m = css.match(new RegExp(`(?:^|\\n)${esc} \\{[^}]*--${name}:\\s*var\\(--zp-[a-z-]+,\\s*(#[0-9a-f]{6})\\)`));
-  assert.ok(m, `${scope} ${name}`); return m![1];
+  const raw = declarations(scope).get(name); const m = raw?.match(/^var\(--zp-[a-z-]+,\s*(#[0-9a-f]{6})\)$/i);
+  assert.ok(m, `${scope} ${name}: ${raw}`); return m![1];
 }
 
 test("#16: field border ≥3:1 and placeholder ≥4.5:1 in both themes", () => {
   for (const scope of [":root", ':root[data-theme="light"]']) {
     const canvas = cssVar(scope, "canvas"), card = cssVar(scope, "card"), surface = cssVar(scope, "surface");
-    const border = fallback(scope, "field-border"), placeholder = fallback(scope, "field-placeholder");
-    for (const bg of [canvas, card, surface]) assert.ok(ratio(border, bg) >= 3, `${scope} border ${border} on ${bg}: ${ratio(border, bg).toFixed(2)}`);
-    assert.ok(ratio(placeholder, canvas) >= 4.5, `${scope} placeholder ${placeholder} on ${canvas}`);
+    // И запасной цвет, и действующий (токен #50, если он есть) должны держать контраст.
+    for (const border of new Set([fallback(scope, "field-border"), cssVar(scope, "field-border")]))
+      for (const bg of [canvas, card, surface]) assert.ok(ratio(border, bg) >= 3, `${scope} border ${border} on ${bg}: ${ratio(border, bg).toFixed(2)}`);
+    for (const placeholder of new Set([fallback(scope, "field-placeholder"), cssVar(scope, "field-placeholder")]))
+      assert.ok(ratio(placeholder, canvas) >= 4.5, `${scope} placeholder ${placeholder} on ${canvas}`);
   }
   assert.match(css, /--field-fill: var\(--canvas\)/);
   assert.match(css, /\.field input:focus-visible[^{]*\{ outline: 2px solid var\(--field-focus\)/);
