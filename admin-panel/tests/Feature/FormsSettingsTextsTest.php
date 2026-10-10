@@ -205,7 +205,7 @@ class FormsSettingsTextsTest extends TestCase
             : 0;
         $support = $this->get('/admin/support')->assertOk();
         if ($threads === 0) {
-            $support->assertSee('Обращений пока нет.')->assertSee('Настройки → Помощь');
+            $support->assertSee('Обращений пока нет.')->assertSee('Настройки → «Помощь»')->assertSee('«Помощь и обновления»'); // G-3: путь на web и desktop
         }
 
         $page = (string) $this->get('/admin/settings')->assertOk()->getContent();

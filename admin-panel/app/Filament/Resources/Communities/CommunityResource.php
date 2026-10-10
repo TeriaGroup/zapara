@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Communities;
 
+use App\Filament\Support\MoscowTime;
 use App\Filament\Resources\Communities\Pages\ListCommunities;
 use App\Filament\Resources\Communities\Pages\ViewCommunity;
 use App\Filament\Resources\Communities\RelationManagers\GroupsRelationManager;
@@ -117,7 +118,7 @@ class CommunityResource extends Resource
                     ->numeric(),
                 TextColumn::make('created_at')
                     ->label('Создано')
-                    ->dateTime('j M Y', 'Europe/Moscow')
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state, year: true, time: false)) // G-3: «9 окт. 2026»
                     ->sortable()
                     ->visibleFrom('md'),
             ])
