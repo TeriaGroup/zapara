@@ -90,69 +90,61 @@ jobs:
   admin:
     name: Admin panel (PHP)
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Linux, X64]
+    # PHP runs in a job container: the runner user has no root, so nothing is installed on the runner itself.
+    # Job containers need Docker; only the runners with the "docker" label are known to have it (docs/CI.md).
+    runs-on: [self-hosted, Linux, X64, docker]
     timeout-minutes: 30
+    container:
+      # Debian 12 (glibc, so the .NET 8 SDK runs here too); pinned by digest like the actions below.
+      image: php:8.3-cli-bookworm@sha256:c24b55afdf860c874b9ec6267ced132ff52de97d308ab08e6cf41e8596e509f7
+    services:
+      # A private Docker network of this job: the port is not published on the runner, so the password is not a secret.
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_PASSWORD: zapara-ci
+          POSTGRES_DB: zapara_test
+        options: >-
+          --tmpfs /var/lib/postgresql/data
+          --health-cmd "pg_isready -U postgres -d zapara_test"
+          --health-interval 2s --health-timeout 5s --health-retries 30
     env:
-      PG_CONTAINER: zapara-ci-pg-${{ github.run_id }}-${{ github.run_attempt }}-admin
-      # App\Support\Zapara accepts only the fixture port 56432.
+      # App\Support\Zapara and the .NET fixtures accept only 127.0.0.1/localhost:56432, so a socat inside the
+      # job container forwards that port to the "postgres" service.
       PG_PORT: "56432"
+      ZAPARA_TEST_POSTGRES: Host=127.0.0.1;Port=56432;Database=zapara_test;Username=postgres;Password=zapara-ci;Maximum Pool Size=20
       COMPOSER_NO_INTERACTION: "1"
+      COMPOSER_VERSION: 2.10.3
+      # sha256 of https://getcomposer.org/download/2.10.3/composer.phar (matches the published composer.phar.sha256sum).
+      COMPOSER_SHA256: 7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+      DOTNET_INSTALL_DIR: /usr/share/dotnet
     steps:
+      # Before checkout: actions/checkout needs git in the container (without it, it downloads a tarball and the
+      # clean-up below cannot use git).
+      - name: System packages and PHP extensions
+        run: |
+          set -eu
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git unzip socat libpq-dev libicu-dev libzip-dev >/dev/null
+          docker-php-ext-install -j"$(nproc)" pdo_pgsql intl zip >/dev/null
+          for ext in pdo_pgsql pdo_sqlite intl zip mbstring; do php -r "exit(extension_loaded('$ext') ? 0 : 1);" || { echo "::error::PHP extension $ext is missing"; exit 1; }; done
+          curl -fsSL --retry 3 -o /usr/local/bin/composer "https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar"
+          echo "${COMPOSER_SHA256}  /usr/local/bin/composer" | sha256sum -c -
+          chmod +x /usr/local/bin/composer
+          php --version | head -n 1
+          composer --version
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: true
           persist-credentials: false
 
+      # Installed inside the container (DOTNET_INSTALL_DIR above), never into the runner's tool cache.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        env:
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        timeout-minutes: 10
         with:
           dotnet-version: 8.0.x
-
-      # PHP comes preinstalled on the runner (docs/CI.md): the runner user has no sudo, and setup-php would
-      # need it for apt. This only checks what is there and stops within seconds with a clear list if not.
-      - name: Check preinstalled PHP and Composer
-        run: |
-          missing=()
-          if ! command -v php >/dev/null 2>&1; then
-            missing+=("php 8.3+ (php8.3-cli)")
-          else
-            if ! php -r 'exit(PHP_VERSION_ID >= 80300 ? 0 : 1);'; then
-              missing+=("php 8.3+ (found $(php -r 'echo PHP_VERSION;'))")
-            fi
-            for ext in pdo_pgsql pdo_sqlite intl zip mbstring; do
-              if ! php -r "exit(extension_loaded('$ext') ? 0 : 1);"; then missing+=("PHP extension $ext"); fi
-            done
-          fi
-          if ! command -v composer >/dev/null 2>&1; then missing+=("composer 2"); fi
-          if [ "${#missing[@]}" -gt 0 ]; then
-            list="$(printf '%s, ' "${missing[@]}")"
-            echo "::error title=PHP is not preinstalled on the runner::Missing: ${list%, }. Install on the runner (as root): php8.3-cli php8.3-pgsql php8.3-sqlite3 php8.3-intl php8.3-zip php8.3-mbstring composer. See docs/CI.md."
-            exit 1
-          fi
-          php --version | head -n 1
-          composer --version
-
-      - name: Start PostgreSQL 16
-        run: |
-          docker rm -f -v "$PG_CONTAINER" >/dev/null 2>&1 || true
-          password="$(openssl rand -hex 16)"
-          echo "::add-mask::$password"
-          docker run -d --name "$PG_CONTAINER" --label zapara-ci=1 \
-            -e POSTGRES_PASSWORD="$password" -e POSTGRES_DB=zapara_test \
-            -p "127.0.0.1:${PG_PORT}:5432" --tmpfs /var/lib/postgresql/data \
-            postgres:16-alpine -c fsync=off -c max_connections=500 >/dev/null
-          for _ in $(seq 1 60); do
-            if docker exec "$PG_CONTAINER" pg_isready -U postgres -d zapara_test >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          docker exec "$PG_CONTAINER" pg_isready -U postgres -d zapara_test
-          app_key="base64:$(openssl rand -base64 32)"
-          echo "::add-mask::$app_key"
-          {
-            echo "ZAPARA_TEST_POSTGRES=Host=127.0.0.1;Port=${PG_PORT};Database=zapara_test;Username=postgres;Password=${password};Maximum Pool Size=20"
-            echo "APP_KEY=$app_key"
-          } >> "$GITHUB_ENV"
 
       # PanelTest runs "dotnet test" on Zapara.Server.Tests with a 300 s limit per call; build it up front.
       - name: Build server test helpers
@@ -164,13 +156,31 @@ jobs:
 
       - name: php artisan test
         working-directory: admin-panel
-        run: php artisan test
+        run: |
+          set -eu
+          app_key="base64:$(php -r 'echo base64_encode(random_bytes(32));')"
+          echo "::add-mask::$app_key"
+          export APP_KEY="$app_key"
+          # Settings come from phpunit.xml and the job env; without an .env file "artisan test" turns every test into
+          # a warning (file_get_contents(.env): No such file or directory).
+          touch .env
+          socat "TCP-LISTEN:${PG_PORT},bind=127.0.0.1,fork,reuseaddr" TCP:postgres:5432 &
+          for _ in $(seq 1 30); do
+            if php -r 'exit(@fsockopen("127.0.0.1", (int) getenv("PG_PORT")) ? 0 : 1);'; then break; fi
+            sleep 1
+          done
+          php artisan test
 
+      # The container runs as root, but the workspace, RUNNER_TEMP and the job's HOME are bind mounts from the runner.
+      # Hand them back to the runner user, otherwise its next checkout and its own clean-up fail on root-owned files.
       - name: Clean up
         if: always()
         run: |
-          docker rm -f -v "$PG_CONTAINER" >/dev/null 2>&1 || true
-          git reset --hard -q && git clean -ffdxq
+          owner="$(stat -c '%u:%g' "$GITHUB_WORKSPACE/../..")"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+          git reset --hard -q || true
+          git clean -ffdxq || true
+          chown -R "$owner" "$GITHUB_WORKSPACE" "$RUNNER_TEMP" "$HOME" 2>/dev/null || true
 
   web:
     name: Frontend (web)
