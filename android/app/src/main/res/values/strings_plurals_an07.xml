@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #106 (AN-07, AN-21, AN-28): склонения по числу и строки, которые раньше были в Kotlin. -->
+<resources>
+    <plurals name="channel_ballot_count">
+        <item quantity="one">Голосования · %d активное</item>
+        <item quantity="few">Голосования · %d активных</item>
+        <item quantity="many">Голосования · %d активных</item>
+        <item quantity="other">Голосования · %d активных</item>
+    </plurals>
+    <plurals name="ux300_android_password_remaining">
+        <item quantity="one">До минимальной длины остался %d символ</item>
+        <item quantity="few">До минимальной длины осталось %d символа</item>
+        <item quantity="many">До минимальной длины осталось %d символов</item>
+        <item quantity="other">До минимальной длины осталось %d символа</item>
+    </plurals>
+    <plurals name="ux300_android_password_over">
+        <item quantity="one">Длина превышена на %d символ</item>
+        <item quantity="few">Длина превышена на %d символа</item>
+        <item quantity="many">Длина превышена на %d символов</item>
+        <item quantity="other">Длина превышена на %d символа</item>
+    </plurals>
+    <plurals name="ux300_android_rename_more">
+        <item quantity="one">И ещё %d пара</item>
+        <item quantity="few">И ещё %d пары</item>
+        <item quantity="many">И ещё %d пар</item>
+        <item quantity="other">И ещё %d пары</item>
+    </plurals>
+    <plurals name="ux30_study_show_more_homework">
+        <item quantity="one">Показать ещё %d задание</item>
+        <item quantity="few">Показать ещё %d задания</item>
+        <item quantity="many">Показать ещё %d заданий</item>
+        <item quantity="other">Показать ещё %d задания</item>
+    </plurals>
+    <plurals name="deadlines_title_count">
+        <item quantity="one">Ближайшие сроки: %d задание</item>
+        <item quantity="few">Ближайшие сроки: %d задания</item>
+        <item quantity="many">Ближайшие сроки: %d заданий</item>
+        <item quantity="other">Ближайшие сроки: %d задания</item>
+    </plurals>
+    <string name="inbox_subtitle_personal">Личный чат</string>
+    <string name="inbox_subtitle_personal_in">Личный чат · %1$s</string>
+    <string name="inbox_subtitle_group">Учебная группа</string>
+    <string name="account_platform_web">Веб</string>
+    <string name="account_platform_unknown">Устройство</string>
+</resources>

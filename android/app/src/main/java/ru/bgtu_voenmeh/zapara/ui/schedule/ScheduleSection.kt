@@ -144,7 +144,7 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
                         LazyColumn(Modifier.width(320.dp)
                             .plannerSwipe(state.selected) { onEvent(ScheduleEvent.Select(state.selected.plusDays(it.dayDelta))) }
                             .plannerContentReveal(state.selected), contentPadding = PaddingValues(Zapara.space.l)) {
-                            item { Text(uiText(R.string.space_day_23, page.deadlines.count { it.done }, page.deadlines.size), style = Zapara.typography.section) }
+                            item { Text(pluralStringResource(R.plurals.deadlines_title_count, page.deadlines.size, page.deadlines.size), style = Zapara.typography.section) }
                              itemsIndexed(page.deadlines, key = { _, row -> row.sharedId ?: row.id }) { _, row -> DeadlineRow(row, state, onEvent) }
                         }
                     }
@@ -443,7 +443,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
             }
         }
         if (page.deadlines.isNotEmpty()) {
-            item { Text(uiText(R.string.space_day_23, (page.deadlines.count { it.done }).toString(), (page.deadlines.size).toString()), style = Zapara.typography.section) }
+            item { Text(pluralStringResource(R.plurals.deadlines_title_count, page.deadlines.size, page.deadlines.size), style = Zapara.typography.section) }
             itemsIndexed(page.deadlines, key = { _, row -> "deadline:${row.sharedId ?: row.id}" }) { _, row ->
                 DeadlineRow(row, state, onEvent)
             }

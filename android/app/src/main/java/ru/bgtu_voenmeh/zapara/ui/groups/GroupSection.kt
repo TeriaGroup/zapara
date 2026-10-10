@@ -76,6 +76,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -775,7 +776,7 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             }
             val iconView = ChannelIcons.resolve(channel.icon, channel.kind) // #30: имя значка не показывается текстом
             val iconRes = (iconView as? ChannelIconView.Glyph)?.glyph?.drawable
-            val preview = if (channel.kind == "ballots") stringResource(R.string.channel_ballot_count, channel.activeBallots)
+            val preview = if (channel.kind == "ballots") pluralStringResource(R.plurals.channel_ballot_count, channel.activeBallots, channel.activeBallots)
                 else if (!channel.lastBody.isNullOrBlank()) {
                     if (channel.lastAuthor.isNullOrBlank()) channel.lastBody!! else "${channel.lastAuthor}: ${channel.lastBody}"
                 } else channel.description.ifBlank { stringResource(R.string.channel_no_messages) }

@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -144,7 +145,7 @@ fun LessonCard(
         FriendStatusRows(lesson.displayFriends, lesson.isUpcoming)
         if (lesson.homework.size > 2) ZChip(
             if (expanded) stringResource(R.string.ux30_study_hide_homework)
-            else stringResource(R.string.ux30_study_show_more_homework, lesson.homework.size - 2),
+            else pluralStringResource(R.plurals.ux30_study_show_more_homework, lesson.homework.size - 2, lesson.homework.size - 2),
             onClick = { expanded = !expanded }, tag = "Lesson.HomeworkExpand.${lesson.index}")
         actions?.invoke(this)
     }
