@@ -25,6 +25,11 @@ Windows-раннера нет: всё, что можно, собирается �
 | `web` | `npm ci`, `node --test` для `web/src/**/*.test.ts`, `npm run build` (tsc --noEmit и vite), `node --test` для `src/Zapara.Web.Tests/*.test.mjs`, `dotnet test src/Zapara.Web.Tests` |
 | `desktop` | `Zapara.Client.Domain.Tests`, `Vograph.Timetable.Tests` и `Vograph.Desktop.Tests` с `-p:EnableWindowsTargeting=true` (Avalonia headless, без дисплея) |
 
+Задание `desktop` идёт только на раннерах с меткой `docker` (`runs-on: [self-hosted, Linux, X64, docker]`). Сейчас она есть
+у `gha-servernote` и `urban-children`. На `dev-workstation` (метки только `self-hosted, Linux, X64`) `Vograph.Desktop.Tests`
+каждый раз роняют тестовый процесс нативно (`free(): invalid pointer`, exit 134). Метка уже была на раннерах, настройки раннеров
+не менялись. Если `dev-workstation` починят, задание можно вернуть на общие метки.
+
 Порты 56432 и 56543 зашиты в тестах как единственные разрешённые порты фикстуры. На раннере они должны быть свободны.
 
 ## Что пропускается на Linux
