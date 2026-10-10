@@ -101,6 +101,44 @@ public class LessonSheetTests : UiTest
     }
 
     [AvaloniaFact]
+    public async Task Closing_the_sheet_collapses_the_details_it_opened()
+    {
+        var (window, vm, db) = await OpenAsync();
+        using var __ = db;
+        var cards = window.GetVisualDescendants().OfType<LessonCardView>().ToList();
+        var later = cards.Single(c => !((LessonRowViewModel)c.DataContext!).IsNext);
+        var row = (LessonRowViewModel)later.DataContext!;
+        var teacher = later.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == row.TeacherLine);
+        Assert.False(row.ShowDetails);
+        Assert.False(teacher.IsEffectivelyVisible);
+
+        row.ToggleSheetCommand.Execute(null); // «⋯» / нажатие на карточку; клики по карточке проверяет тест выше
+        Pump();
+        Assert.True(row.IsSheetOpen);
+        Assert.True(row.ShowDetails);
+        Assert.True(teacher.IsEffectivelyVisible);
+
+        row.ToggleSheetCommand.Execute(null); // «⋯» / нажатие на карточку; клики по карточке проверяет тест выше
+        Pump();
+        Assert.False(row.IsSheetOpen);
+        Assert.False(row.ShowDetails, "после закрытия листа карточка не остаётся раскрытой");
+        Assert.False(teacher.IsEffectivelyVisible);
+
+        // Переход к паре (Reveal) открывает лист с подробностями; закрытие сворачивает и их.
+        row.Reveal();
+        Assert.True(row.ShowDetails && row.IsSheetOpen);
+        row.ToggleSheetCommand.Execute(null);
+        Assert.False(row.ShowDetails);
+
+        // Ближайшая пара по умолчанию показывает подробности и после закрытия своего листа.
+        var next = vm.Lessons.Single(r => r.IsNext);
+        next.ToggleSheetCommand.Execute(null);
+        next.ToggleSheetCommand.Execute(null);
+        Assert.True(next.ShowDetails);
+        AssertNoBindingErrors();
+    }
+
+    [AvaloniaFact]
     public async Task The_more_button_toggles_the_sheet_and_buttons_inside_the_card_keep_their_own_click()
     {
         var (window, _, db) = await OpenAsync();

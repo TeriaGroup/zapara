@@ -47,13 +47,13 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public string PriorityCaption => IsNext ? Owner.DayPriorityCaption : "";
     [ObservableProperty] private bool showDetails;
     public bool ShowHomeworkDetails => ShowDetails && HasHomework;
-    public string DetailsCaption => ShowDetails ? "Свернуть" : "Подробнее";
-    partial void OnShowDetailsChanged(bool value){OnPropertyChanged(nameof(ShowHomeworkDetails));OnPropertyChanged(nameof(DetailsCaption));}
-    [RelayCommand] private void ToggleDetails()=>ShowDetails=!ShowDetails;
+    partial void OnShowDetailsChanged(bool value)=>OnPropertyChanged(nameof(ShowHomeworkDetails));
     /// <summary>#9 (G-2): действия пары — в листе, который открывает нажатие на карточку или «⋯», как лист пары на web.
     /// На закрытой карточке остаётся не больше одного действия: «Карта» у текущей/следующей пары.</summary>
     [ObservableProperty] private bool isSheetOpen;
-    partial void OnIsSheetOpenChanged(bool value){OnPropertyChanged(nameof(ShowInlineMap));if(value)ShowDetails=true;}
+    /// <remarks>Подробности открываются вместе с листом и закрываются вместе с ним; закрытая карточка возвращается к виду
+    /// по умолчанию (подробности только у ближайшей пары).</remarks>
+    partial void OnIsSheetOpenChanged(bool value){OnPropertyChanged(nameof(ShowInlineMap));ShowDetails=value||IsNext;}
     public bool ShowInlineMap => IsNext && !IsSheetOpen;
     [RelayCommand] private void ToggleSheet()=>IsSheetOpen=!IsSheetOpen;
     /// <summary>R2-07 / G-2: переход к паре (из «Недели», поиска, «К ближайшей паре», пересечений) раскрывает её лист —
