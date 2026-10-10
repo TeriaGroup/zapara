@@ -90,7 +90,7 @@ class HomeworkSectionTest {
         checkLabels("Просрочено")
         val toggle = rule.onNodeWithTag("Homework.Done.7")
         toggle.assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp)
-            .assertContentDescriptionEquals("Сдано: Высшая математика, Прочитать главу и подготовить конспект")
+            .assertContentDescriptionEquals("Выполнено: Высшая математика, Прочитать главу и подготовить конспект")
         Frames.capture(rule.activity, "task3-overdue-$label-200")
         toggle.performClick().assertIsOn()
         checkLabels("Сдано")
