@@ -108,6 +108,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             guest = runtime.isGuest(),
             externalPending = runtime.pendingExternal() != null,
             pendingExternalProvider = runtime.pendingExternal()?.provider,
+            guestStatus = runtime.strings(R.string.account_guest),
             status = runtime.strings(
                 when {
                     runtime.client == null -> R.string.account_unconfigured
@@ -282,18 +283,18 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
         val snap = mutable.value
         if (snap.busy || runtime.client == null) return
         if (!snap.canSubmitCredentials) {
-            mutable.update { it.copy(status = runtime.strings(R.string.account_validation)) }
+            mutable.update { it.formFail(runtime.strings(R.string.account_validation)) }
             return
         }
-        launchOp(allowIdentityTransition = true) { captured ->
+        launchOp(allowIdentityTransition = true, form = true) { captured ->
             val client = runtime.client!!
             val secret = captured.password
             if (captured.registration) {
                 if (!captured.registrationAvailable) {
-                    return@launchOp captured.copy(status = runtime.strings(R.string.account_registration_unavailable))
+                    return@launchOp captured.formFail(runtime.strings(R.string.account_registration_unavailable))
                 }
                 if (!captured.documentsAccepted) {
-                    return@launchOp captured.copy(status = runtime.strings(R.string.account_accept_required))
+                    return@launchOp captured.formFail(runtime.strings(R.string.account_accept_required))
                 }
                 client.register(captured.username, secret, captured.displayName.ifBlank { null })
                 captured.copy(registration = false, status = runtime.strings(R.string.account_created))
@@ -314,7 +315,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                     identities = identities,
                     hasPassword = if (result) true else captured.hasPassword,
                     status = if (result) runtime.strings(R.string.account_local) else runtime.strings(R.string.account_transition_failed)
-                )
+                ).let { if (result) it else it.formFail(it.status) }
             }
         }
     }
@@ -542,12 +543,12 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             return
         }
         if (login && snap.registration && !snap.documentsAccepted) {
-            mutable.update { it.copy(status = runtime.strings(R.string.account_accept_required)) }
+            mutable.update { it.formFail(runtime.strings(R.string.account_accept_required)) }
             return
         }
         if (login && !snap.guest) return
         if (!login && snap.guest) return
-        launchOp(provider) { captured ->
+        launchOp(provider, form = login) { captured ->
             if (!login && captured.hasPassword != true) return@launchOp startProviderProof(captured, "link:$provider")
             val client = runtime.client!!
             val pkce = nativePkce()
@@ -691,7 +692,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
         return current.userId == stamp.userId && current.familyId == stamp.familyId
     }
 
-    private fun launchOp(provider: String? = null, allowIdentityTransition: Boolean = false,
+    private fun launchOp(provider: String? = null, allowIdentityTransition: Boolean = false, form: Boolean = false,
         block: suspend (AccountUiState) -> AccountUiState) {
         val snap = mutable.value
         if (snap.busy || operationClaim != null || runtime.client == null) return
@@ -718,12 +719,12 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 throw e
             } catch (e: AccountClientException) {
                 runCatching { android.util.Log.w("ZaparaAccount", "op ${e.failure}", e) }
-                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false, status = failureText(e.failure)).hide(e.failure, provider) }
+                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false).fail(failureText(e.failure), form).hide(e.failure, provider) }
             } catch (e: IllegalArgumentException) {
-                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_validation)) }
+                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false).fail(runtime.strings(R.string.account_validation), form) }
             } catch (e: Exception) {
                 runCatching { android.util.Log.w("ZaparaAccount", "op", e) }
-                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_failed)) }
+                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false).fail(runtime.strings(R.string.account_failed), form) }
             } finally { if (operationClaim == claim) operationClaim = null }
         }
     }
@@ -763,6 +764,10 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             status = runtime.strings(R.string.account_logout_local)
         )
     }
+
+    /** Сбой формы входа/регистрации: показать в строке и пометить, что это именно он (см. [AccountUiState.formFailure]). */
+    private fun AccountUiState.formFail(text: String): AccountUiState = copy(status = text, formFailure = text)
+    private fun AccountUiState.fail(text: String, form: Boolean): AccountUiState = if (form) formFail(text) else copy(status = text)
 
     private fun AccountUiState.hide(failure: AccountClientFailure, provider: String?): AccountUiState = when (failure) {
         AccountClientFailure.ProviderUnavailable -> when (provider) {

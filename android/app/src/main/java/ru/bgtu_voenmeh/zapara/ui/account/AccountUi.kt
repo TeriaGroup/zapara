@@ -140,6 +140,10 @@ data class AccountUiState(
     val profileError: String? = null,
     val accountName: String = "",
     val status: String = "",
+    /** #148: текст в [status], если это сбой входа/регистрации из формы; смена «Вход / Регистрация» снимает только его. */
+    val formFailure: String? = null,
+    /** Нейтральная строка гостя, которой заменяется [formFailure] при смене режима. */
+    val guestStatus: String = "",
     val confirmLogout: Boolean = false,
     val currentPassword: String = "",
     val newPassword: String = "",
@@ -218,9 +222,10 @@ data class AccountUiState(
         is AccountEvent.Proof -> copy(proof = event.value)
         is AccountEvent.RecoveryUsername -> copy(recoveryUsername = event.value)
         AccountEvent.ToggleRegistration ->
-            // #148 (R3-02): «Неверный логин или пароль» не переживает смену «Вход / Регистрация».
+            // #148 (R3-02): «Неверный логин или пароль» не переживает смену «Вход / Регистрация». Снимается только
+            // сбой формы — пояснение гостя и, например, «Пароль изменён» после восстановления остаются.
             if (!registrationAvailable) this else copy(registration = !registration, password = "", documentsAccepted = false,
-                status = if (showAccount) status else "")
+                status = if (formFailure != null && status == formFailure) guestStatus else status, formFailure = null)
         is AccountEvent.AcceptDocuments -> copy(documentsAccepted = event.value)
         AccountEvent.RequestLogout -> copy(confirmLogout = true).clearSecrets()
         AccountEvent.CancelLogout -> copy(confirmLogout = false)
