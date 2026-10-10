@@ -135,6 +135,50 @@ class AuditStatusDashboardTest extends TestCase
         $this->assertContains(RecentAudit::class, $widgets);
     }
 
+    public function test_r2_who_column_does_not_repeat_the_login_as_the_name(): void
+    {
+        $this->assertNull(AuditLog::actorNote('design.admin', 'design.admin'));
+        $this->assertNull(AuditLog::actorNote('design.admin', ' Design.Admin '));
+        $this->assertNull(AuditLog::actorNote('design.admin', ''));
+        $this->assertNull(AuditLog::actorNote(null, null));
+        $this->assertSame('Оператор Журнала', AuditLog::actorNote('op1', 'Оператор Журнала'));
+
+        $admin = $this->makeUser(true);
+        DB::table(Zapara::accounts().'.users')->where('user_id', $admin->user_id)->update(['display_name' => $admin->username]);
+        $this->actingAs($admin->fresh());
+        app(OperatorWork::class)->createCommunity($admin, 'Группа '.$this->token('c'), '');
+        $html = (string) Livewire::test(RecentAudit::class)->assertSee($admin->username)->html();
+        preg_match_all('~<p class="fi-ta-text-description">(.*?)</p>~s', $html, $notes);
+        foreach ($notes[1] as $note) {
+            $this->assertStringNotContainsString($admin->username, strip_tags($note));
+        }
+    }
+
+    public function test_r2_recent_actions_show_ten_on_desktop_and_five_on_a_phone_with_a_link_to_the_log(): void
+    {
+        $admin = $this->makeUser(true);
+        $this->actingAs($admin);
+        $before = AdminAudit::query()->count();
+        foreach (range(1, 12) as $n) {
+            app(OperatorWork::class)->createCommunity($admin, 'Группа '.$this->token('c'.$n), '');
+        }
+        $this->assertGreaterThanOrEqual(12, AdminAudit::query()->count() - $before);
+        $latest = AdminAudit::query()->orderByDesc('created_at')->orderByDesc('event_id')->limit(12)->get();
+
+        $page = Livewire::test(RecentAudit::class)
+            ->assertCanSeeTableRecords($latest->take(RecentAudit::DESKTOP_LIMIT))
+            ->assertCanNotSeeTableRecords($latest->slice(RecentAudit::DESKTOP_LIMIT))
+            ->assertSeeHtml('href="'.AuditLog::getUrl().'"')
+            ->assertSee('Весь журнал');
+        $this->assertSame(10, RecentAudit::DESKTOP_LIMIT);
+        $this->assertSame(5, RecentAudit::PHONE_LIMIT);
+        // Строки 6–10 помечены и на телефоне скрыты; первые пять — без пометки.
+        $this->assertSame(RecentAudit::DESKTOP_LIMIT - RecentAudit::PHONE_LIMIT, substr_count((string) $page->html(), RecentAudit::EXTRA_CLASS));
+
+        $css = (string) $this->get('/admin')->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('~@media \(max-width: 767px\) \{\s*\.zp-recent-audit-extra \{\s*display: none !important;~', $css);
+    }
+
     protected function tearDown(): void
     {
         foreach ($this->savedStorage as $row) {

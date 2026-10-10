@@ -49,7 +49,7 @@ class MembershipsRefreshTest extends TestCase
             ->assertNotified('Заявка отклонена')
             ->assertDontSee($member->username);
         if (DB::table(Zapara::communities().'.join_requests')->where('status', 'pending')->doesntExist()) {
-            $page->assertSee('Нет заявок');
+            $page->assertSee('Заявок нет')->assertSee('Они появляются, когда студент просит вступить в группу.');
         }
         $this->assertSame('rejected', DB::table(Zapara::communities().'.join_requests')->where('request_id', $requestId)->value('status'));
     }

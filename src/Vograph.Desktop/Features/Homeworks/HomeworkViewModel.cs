@@ -513,6 +513,10 @@ public sealed partial class HomeworkRowViewModel : ObservableObject
         catch (System.ComponentModel.Win32Exception) { _owner.App.Toasts.Info(_owner.App.Loc.T("hwFileBad")); }
     }
 
+    /// <summary>#9 (G-2): как карточка задания на web — на карточке только отметка «Готово»,
+    /// остальные действия в листе «⋯»; «Удалить» в нём последнее.</summary>
+    [ObservableProperty] private bool isSheetOpen;
+    [RelayCommand] private void ToggleSheet() => IsSheetOpen = !IsSheetOpen;
     [RelayCommand] private Task ToggleDone() => _owner.ToggleDoneAsync(this);
     [RelayCommand] private Task Edit() => _owner.EditAsync(this);
     [RelayCommand] private Task Delete() => _owner.DeleteAsync(this);

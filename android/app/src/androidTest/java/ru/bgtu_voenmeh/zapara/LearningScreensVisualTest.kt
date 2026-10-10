@@ -143,7 +143,8 @@ class LearningScreensVisualTest {
         rule.onNodeWithTag("Homework.Shared.shared-1").assertIsDisplayed()
         shot(current.activity, "fullqa-learning-shared")
 
-        rule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("Homework.Edit.7"))
+        rule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("Homework.Row.7"))
+        rule.onNodeWithTag("Homework.Row.7").performClick() // #101: лист задания
         rule.onNodeWithTag("Homework.Edit.7").performClick()
         rule.onNodeWithTag("Editor.Text").assertIsDisplayed()
             .performClick().performTextReplacement("Новый конспект")

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import * as planner from "./planner.ts";
 import { absoluteDate, freeGaps, gapsBeforeLessons, hasLessonOverlap, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner.ts";
 import type { HomeworkItem, Lesson } from "./types";
 const lesson=(start:string,end:string,subject="Математика"):Lesson=>({timeStart:start,timeEnd:end,subjectRaw:subject,subjectNormalized:subject,dayOfWeek:1,parity:0,index:0,typeRaw:"Лекция",teacherRaw:null,classroomRaw:null,roomRaw:null,buildingRaw:null});
@@ -23,3 +24,30 @@ test("deadline window includes selected day and two following calendar dates",()
 test("personal due date uses nth distinct lesson day strictly after creation",()=>{const item:HomeworkItem={id:"a",subject:"Математика",text:"Задание",done:false,created:new Date(2026,8,27).toISOString(),targetNthOccurrence:2};const period={start:"2026-09-01",weekCount:2,title:"Осень",timeZone:"Europe/Moscow"};const due=personalHomeworkDue(item,[lesson("09:00","10:00"),lesson("11:00","12:00")],period,false);assert.equal(due?.getDate(),5);assert.equal(due?.getMonth(),9);assert.equal(personalHomeworkDue({...item,subject:"Unknown"},[lesson("09:00","10:00")],period,false),null);});
 
 test("overlaps are distinct from short adjacent breaks",()=>{assert.equal(hasLessonOverlap([lesson("09:00","10:00"),lesson("10:00","11:00")]),false);assert.equal(hasLessonOverlap([lesson("09:00","10:00"),lesson("09:59","11:00")]),true);});
+
+test("r2: the empty-day line ends with one period after Intl's « г.», and says «пары»", () => {
+  const { endSentence, nextLessonsLine } = { endSentence: planner.endSentence, nextLessonsLine: planner.nextLessonsLine };
+  const monday = new Date(2026, 9, 12);
+  assert.ok(absoluteDate(monday).endsWith(" г."), absoluteDate(monday)); // Intl сам ставит точку после «г»
+  // G-3: формат глоссария — «Следующая пара: пн, 12 окт., 10:50», без двойной точки.
+  assert.equal(nextLessonsLine(monday, "10:50"), "Следующая пара: пн, 12 окт., 10:50");
+  assert.equal(nextLessonsLine(monday), "Следующая пара: пн, 12 окт.");
+  assert.doesNotMatch(nextLessonsLine(monday, "10:50"), /\.\.|Ближайшие/);
+  assert.equal(nextLessonsLine(undefined), "В ближайшие три недели в сохранённом расписании пар нет.");
+  assert.equal(endSentence("Готово"), "Готово.");
+  assert.equal(endSentence("12 октября 2026 г."), "12 октября 2026 г.");
+  assert.equal(endSentence("Загрузка…"), "Загрузка…");
+  assert.equal(endSentence("Правда? "), "Правда?");
+});
+
+test("R2-14: на пустом дне — «Пар нет», без нулевой статистики и второй ссылки «К срокам домашки» на ПК", async () => {
+  const planner = await import("./planner.ts");
+  assert.equal(planner.dayOverviewText([]), "Пар нет");
+  assert.equal(planner.dayOverviewText([{ timeStart: "09:00", timeEnd: "10:30" }, { timeStart: "12:40", timeEnd: "14:15" }]), "2 пары · 09:00–14:15");
+  const { readFileSync } = await import("node:fs");
+  const pages = readFileSync(new URL("./pages.tsx", import.meta.url), "utf8");
+  assert.match(pages, /lessons\.length > 0 && <p className="muted">Учебное время:/);
+  assert.doesNotMatch(pages, /pairCount\(lessons\.length\)/);
+  const css = readFileSync(new URL("./mobile-study.css", import.meta.url), "utf8");
+  assert.match(css, /@media \(min-width: 960px\) \{\n  \.study-day-action-links \{ display: none; \}/);
+});

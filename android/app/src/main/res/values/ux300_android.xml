@@ -5,7 +5,7 @@
     <string name="ux300_android_week_expand">Показать пары</string>
     <string name="ux300_android_week_collapse">Свернуть пары</string>
     <string name="ux300_android_week_open_previous">Предыдущий учебный день</string>
-    <string name="ux300_android_week_free_window">Свободное окно: %1$d мин</string>
+    <string name="ux300_android_week_free_window">Перерыв %1$d мин</string>
     <string name="ux300_android_week_show_tools">Поиск и действия</string>
     <string name="ux300_android_week_hide_tools">Скрыть поиск и действия</string>
     <string name="ux300_android_summary_alphabetical">По алфавиту</string>
@@ -22,8 +22,6 @@
     <string name="ux300_android_confirm_password">Повторите пароль</string>
     <string name="ux300_android_password_mismatch">Пароли не совпадают</string>
     <string name="ux300_android_password_invalid">Пароль содержит недопустимый символ</string>
-    <string name="ux300_android_password_remaining">До минимальной длины осталось %1$d символов</string>
-    <string name="ux300_android_password_over">Длина превышена на %1$d символов</string>
     <string name="ux300_android_password_length_ok">Длина пароля подходит</string>
     <string name="ux300_android_share_lesson">Поделиться парой</string>
     <string name="ux300_android_device_search">Поиск по имени или коду устройства</string>
@@ -92,7 +90,6 @@
     <string name="ux300_android_show_invites">Приглашения: %1$d · показать</string>
     <string name="ux300_android_hide_invites">Приглашения: %1$d · скрыть</string>
     <string name="ux300_android_rename_affected">Затронуто пар текущей группы: %1$d</string>
-    <string name="ux300_android_rename_more">И ещё %1$d пар</string>
     <string name="ux300_android_show_aggregate">Показать итоги вариантов</string>
     <string name="ux300_android_hide_aggregate">Скрыть итоги вариантов</string>
     <string name="ux300_android_aggregate_scope">Итог по %1$d загруженным ответам</string>

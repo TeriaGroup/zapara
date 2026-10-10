@@ -97,7 +97,10 @@ internal class HomeworkCaptureActions(private val rule: ComposeTestRule) {
                 rule.onNodeWithTag("Editor.Due", true).assertTextEquals(due)
                 rule.onNodeWithTag("Editor.Save").assertIsEnabled()
             }
-            fun open() { rule.onNodeWithTag("Homework.Row.$id").performScrollTo().performClick() }
+            fun open() {
+                rule.onNodeWithTag("Homework.Row.$id").performScrollTo().performClick() // #101: лист задания
+                rule.onNodeWithTag("Homework.Edit.$id").performClick()
+            }
             edit("open", oldDue) { open() }
             edit("text", "Срок: 02.09 (Ср)") { rule.onNodeWithTag("Editor.Text").performTextReplacement("Изменённый конспект") }
             edit("n", "Срок: 03.09 (Чт)") { rule.onNodeWithTag("Editor.Inc").performClick() }

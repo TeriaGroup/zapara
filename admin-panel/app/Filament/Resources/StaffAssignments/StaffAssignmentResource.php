@@ -61,7 +61,8 @@ class StaffAssignmentResource extends Resource
                 TextColumn::make('user.username')
                     ->label('Пользователь')
                     ->weight('medium')
-                    ->description(fn (StaffAssignment $record): ?string => $record->user?->display_name ?: null)
+                    // R2-21/K-7: имя под логином — только если отличается от него (иначе «design.student» дважды).
+                    ->description(fn (StaffAssignment $record): ?string => self::nameUnlessLogin($record->user?->username, $record->user?->display_name))
                     ->searchable(),
                 TextColumn::make('community.name')
                     ->label('Сообщество')
@@ -93,5 +94,12 @@ class StaffAssignmentResource extends Resource
         return [
             'index' => ManageStaffAssignments::route('/'),
         ];
+    }
+
+    public static function nameUnlessLogin(?string $username, ?string $displayName): ?string
+    {
+        $name = trim((string) $displayName);
+
+        return $name === '' || mb_strtolower($name) === mb_strtolower(trim((string) $username)) ? null : $name;
     }
 }
