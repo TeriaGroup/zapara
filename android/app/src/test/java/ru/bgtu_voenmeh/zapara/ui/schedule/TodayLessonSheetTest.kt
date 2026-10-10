@@ -47,7 +47,7 @@ class TodayLessonSheetTest {
     @Test fun past_pairs_start_collapsed_behind_one_row() {
         val s = src("ScheduleSection.kt")
         assertTrue(s.contains("mutableStateOf(pastCount > 0)"))
-        assertEquals("Прошедшие пары: 2 · показать", XmlCopy.get("schedule_show_past", 2))
+        assertEquals("Показать прошедшие пары (2)", XmlCopy.get("schedule_show_past", 2))
         assertEquals(1, Regex("tag = \"Schedule.RemainingOnly\"").findAll(s).count())
     }
 
@@ -90,5 +90,28 @@ class TodayLessonSheetTest {
         assertEquals(2, sl.chipVariant(title = 150, actions = 0, full = 150, short = 105, gap = 8, max = 358))
         assertEquals(3, sl.chipVariant(title = 150, actions = 80, full = 150, short = 105, gap = 8, max = 358))
         assertEquals("и короткий не помещается — полный", 2, sl.chipVariant(title = 200, actions = 80, full = 150, short = 105, gap = 8, max = 358))
+    }
+
+    @Test fun jumps_skip_the_sticky_now_header_too() {
+        // [Сейчас]? [блок дня] [пары…]: при закреплённом «Сейчас» пара i — элемент i + 2, без него — i + 1.
+        assertEquals(1, ScheduleListIndex.lesson(0, nowHeader = false))
+        assertEquals(2, ScheduleListIndex.lesson(0, nowHeader = true))
+        assertEquals(5, ScheduleListIndex.lesson(3, nowHeader = true))
+        val s = src("ScheduleSection.kt")
+        assertFalse("переходы считают смещение через ScheduleListIndex", Regex("animateScrollToItem\\([^)]*\\+ 1\\)").containsMatchIn(s))
+        assertEquals(4, Regex("animateScrollToItem\\(ScheduleListIndex\\.lesson\\([^\\n]*nowHeader = live != null\\)\\)").findAll(s).count())
+        assertTrue(s.contains("if (live != null) stickyHeader(key = \"Schedule.NowHero\")"))
+    }
+
+    @Test fun only_the_placed_group_chip_carries_the_tag() {
+        val chrome = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/shell/ShellChrome.kt").readText()
+        val bar = chrome.substring(chrome.indexOf("fun ZTopBar("), chrome.indexOf("private enum class TopBarSlot"))
+        // пробы меряют ширину без семантики, тег — только у выбранной формы
+        assertEquals(2, Regex("clearAndSetSemantics \\{\\}\\) \\{ GroupChip\\([^)]*tagged = false\\)").findAll(bar).count())
+        assertEquals(1, Regex("GroupChip\\([^)]*tagged = true\\)").findAll(bar).count())
+        assertFalse(bar.contains("\"Top.GroupChip\""))
+        val chip = chrome.substring(chrome.indexOf("private fun GroupChip("))
+        assertTrue(chip.contains("val tag = if (tagged) \"Top.GroupChip\" else null"))
+        assertEquals(1, Regex("\"Top.GroupChip\"").findAll(chrome).count())
     }
 }
