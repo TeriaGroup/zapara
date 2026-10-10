@@ -24,6 +24,7 @@ Windows-раннера нет: всё, что можно, собирается �
 | `admin` | PostgreSQL 16 на `127.0.0.1:56432`, `composer install`, `php artisan test` в `admin-panel` (PanelTest сам вызывает `dotnet test`) |
 | `web` | `npm ci`, `node --test` для `web/src/**/*.test.ts`, `npm run build` (tsc --noEmit и vite), `node --test` для `src/Zapara.Web.Tests/*.test.mjs`, `dotnet test src/Zapara.Web.Tests` |
 | `desktop` | `Zapara.Client.Domain.Tests`, `Vograph.Timetable.Tests` и `Vograph.Desktop.Tests` с `-p:EnableWindowsTargeting=true` (Avalonia headless, без дисплея) |
+| `android` | JDK 17 (Temurin), Android SDK в `$RUNNER_TEMP`, `./gradlew :app:testGithubDebugUnitTest --max-workers=2` в `android`; при падении — отчёты тестов артефактом на 7 дней |
 
 Порты 56432 и 56543 зашиты в тестах как единственные разрешённые порты фикстуры. На раннере они должны быть свободны.
 
@@ -53,7 +54,14 @@ Windows-раннера нет: всё, что можно, собирается �
 - `manifest cannot cache private or cross-origin URLs outside the app scope`.
 
 Не запускаются вообще: `Zapara.Server.Admin.UiTests` (Playwright и браузеры), `Vograph.Desktop.UiVerify` (FlaUI, только Windows),
-Android (`gradlew`), `scripts/timetable/Verify-Milestone.ps1`.
+инструментальные тесты Android (`src/androidTest`, нужен эмулятор или устройство), рендеры экранов Android
+(`src/test/.../design`, Roborazzi: идут только с `DESIGN_OUT`), `scripts/timetable/Verify-Milestone.ps1`.
+
+### Android
+
+У приложения два flavour (`github`, `rustore`), поэтому задачи `testDebugUnitTest` нет. Задание гоняет
+`:app:testGithubDebugUnitTest` — вариант, который собирают для релизов с GitHub и запускают локально; варианты `rustore`
+отличаются только флагом `SELF_UPDATE`. Локально то же самое: `cd android && ./gradlew :app:testGithubDebugUnitTest`.
 
 `RestoreSchemaTests` и CLI-тесты (`AdminCliTests`, `CommunityCliTests`, `SyncCliTests`) работают: задание передаёт
 `ZAPARA_RESTORE_TEST_CONTAINER`, `ZAPARA_RESTORE_TEST_DIRECTORY` и `DOTNET8`.
@@ -61,7 +69,10 @@ Android (`gradlew`), `scripts/timetable/Verify-Milestone.ps1`.
 ## Что нужно на раннере
 
 SDK и интерпретаторы ставят сами задания: `actions/setup-dotnet` (.NET 8 в `$RUNNER_TEMP/dotnet`: каталоги по умолчанию пользователю раннера недоступны для записи; задание `desktop` ставит ещё SDK 10, генераторам Avalonia 12 нужен Roslyn 4.14+),
-`actions/setup-node` (Node 24). PHP задания не ставят: у пользователя раннера нет `sudo`, а `setup-php` ставит PHP через `apt`.
+`actions/setup-node` (Node 24), `actions/setup-java` (JDK 17, Temurin) и `gradle/actions/setup-gradle` (`cache-provider: basic` —
+открытый кэш на GitHub Actions cache; по умолчанию там коммерческий сервис). Android SDK задание `android` ставит без `sudo` в
+`$RUNNER_TEMP/android-sdk`: command-line tools 23.0 (архив сверяется по SHA-256), `platforms;android-34`, `build-tools;34.0.0`;
+Gradle home — `$RUNNER_TEMP/gradle-home`. PHP задания не ставят: у пользователя раннера нет `sudo`, а `setup-php` ставит PHP через `apt`.
 Предустановить нужно:
 
 - Linux x64, Ubuntu или Debian;
@@ -78,11 +89,12 @@ SDK и интерпретаторы ставят сами задания: `actio
 (`docker rm -f -v`), временный каталог архивов и все неотслеживаемые файлы (`git reset --hard`, `git clean -ffdx`).
 Контейнеры помечены `zapara-ci=1` и названы `zapara-ci-pg-<run_id>-<attempt>-<job>`; если задание убито вместе с раннером,
 остатки можно найти командой `docker ps -a --filter label=zapara-ci=1`. Данные PostgreSQL лежат в tmpfs и на диск не попадают.
-Кэши пакетов (`~/.nuget/packages`, кэш npm и Composer) остаются между запусками; секретов в них нет.
+Кэши пакетов (`~/.nuget/packages`, кэш npm и Composer) остаются между запусками; секретов в них нет. Задание `android` в конце
+удаляет свой SDK и Gradle home из `$RUNNER_TEMP`; зависимости Gradle между запусками приходят из кэша GitHub Actions.
 
 Тесты desktop идут с `TMPDIR=$RUNNER_TEMP`: часть тестов создаёт каталоги в `/tmp/opencode`, а на общем раннере такой каталог может принадлежать другому пользователю.
 
-Задание `web` идёт с `TZ=Europe/Moscow`: тесты форматирования времени ждут московское время, а часы раннера в UTC.
+Задания `web` и `android` идут с `TZ=Europe/Moscow`: тесты форматирования времени ждут московское время, а часы раннера в UTC.
 
 ## После слияния PR #2
 
