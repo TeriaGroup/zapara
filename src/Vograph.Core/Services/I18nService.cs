@@ -87,7 +87,7 @@ public class I18nService
             ["syncExpired"] = "Операция синхронизации устарела — повторите действие",
             ["syncOffline"] = "Сервер недоступен. Синхронизация отложена; локальные данные сохранены.",
             // Header
-            ["appTitle"] = "Военмех - расписание и карты",
+            ["appTitle"] = "Военмех — расписание и карты",
             ["headerHint"] = "Группа {0} · {1} неделя",
             ["headerSub"] = "Расписание Военмеха · завтра по умолчанию",
             ["odd"] = "нечетная",
@@ -274,6 +274,8 @@ public class I18nService
             ["syncLanFail"] = "Не удалось запустить сервер: {0}",
             ["syncLanBusy"] = "Порт {0} занят другой программой",
             ["syncExported"] = "Экспорт сохранён: {0}",
+            // #20: подсказки и имена кнопок сайдбара и темы
+            ["menuCollapseTip"] = "Свернуть меню (Ctrl+B)", ["menuExpandTip"] = "Развернуть меню (Ctrl+B)", ["themeToDark"] = "Тёмная тема", ["themeToLight"] = "Светлая тема", ["sidebarToggleName"] = "Свернуть меню", ["sidebarExpandName"] = "Развернуть меню", ["pastLesson"] = "Прошла",
             // Updates card / sidebar item («updTitle», «autoUpdate» and «updDownloading» above are reused as they are)
             ["setUpdates"] = "Обновления", ["updIdle"] = "Проверка ещё не выполнялась", ["updChecking"] = "Проверка…",
             ["updUpToDate"] = "Актуальная версия {0} · проверено {1}", ["updAvailable"] = "Доступна {0}",
