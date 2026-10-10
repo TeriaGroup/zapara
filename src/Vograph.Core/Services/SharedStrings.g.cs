@@ -6,7 +6,7 @@ public static class SharedStrings
     /// <summary>Ключ каталога → строка.</summary>
     public static readonly IReadOnlyDictionary<string, string> Catalog = new Dictionary<string, string>
     {
-        ["groupChat"] = "Чат",
+        ["groupChat"] = "Чат группы",
         ["productName"] = "Расписание военмех",
         ["scheduleTitle"] = "Расписание",
         ["parityOdd"] = "нечётная",

@@ -2047,7 +2047,7 @@ function GroupContent() {
                   }}>
                   <TopicMark topic={topic} />
                   <span className="group-quick-topic-main">
-                    <span className="group-quick-topic-top"><b>{topic.topicId === null ? "Чат" : topic.title}</b><span className="muted">{groupTopicWhen(topic.lastAt)}</span></span>
+                    <span className="group-quick-topic-top"><b>{channelTitle(topic)}</b><span className="muted">{groupTopicWhen(topic.lastAt)}</span></span>
                     <span className="group-quick-topic-bottom"><span className="muted">{topicPreview(topic)}</span>
                       {topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}</span>
                   </span>

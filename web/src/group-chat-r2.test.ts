@@ -41,8 +41,8 @@ test("r2: on a phone the group chat header fits instead of being cut in half", (
 });
 
 test("r2: the general group chat is called «Чат» from the catalog, not the server's «Чатик»", () => {
-  assert.equal(S.groupChat, "Чат");
-  assert.equal(channelTitle({ topicId: null, title: "Чатик" }), "Чат");
+  assert.equal(S.groupChat, "Чат группы"); // G-3: как на desktop
+  assert.equal(channelTitle({ topicId: null, title: "Чатик" }), "Чат группы");
   assert.equal(channelTitle({ topicId: "t-1", title: "Важное" }), "Важное");
   assert.equal(groupTabs[0][1], S.groupChat);
   assert.match(pages, /<span>\{channelTitle\(topic\)\}<\/span>/);

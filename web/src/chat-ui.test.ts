@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { channelTitle, composerHelp, composerLabels, groupTabs, hasDesktopKeyboard, showInboxFilters, singleChat } from "./chat-ui.ts";
 
-test("group tabs read «Чат · Каналы · Участники» and the general stream is «Чат»", () => {
-  assert.deepEqual(groupTabs.map(([, label]) => label), ["Чат", "Каналы", "Участники"]);
-  assert.equal(channelTitle({ topicId: null, title: "Общий поток" }), "Чат");
+test("group tabs read «Чат группы · Каналы · Участники» and the general stream is «Чат группы» (G-3)", () => {
+  assert.deepEqual(groupTabs.map(([, label]) => label), ["Чат группы", "Каналы", "Участники"]);
+  assert.equal(channelTitle({ topicId: null, title: "Общий поток" }), "Чат группы");
   assert.equal(channelTitle({ topicId: "t1", title: "Объявления" }), "Объявления");
 });
 
@@ -40,7 +40,7 @@ test("files compiled by stubbed UI tests inline the same wording", async () => {
   // r2: вкладки и «Чат» в pages.tsx — из groupTabs/channelTitle (каталог), review-regressions подставляет ./chat-ui.
   assert.ok(pages.includes("{groupTabs.map(") && pages.includes('import { channelTitle, groupTabs } from "./chat-ui";'));
   assert.ok(!/>Все разделы</.test(pages) && !/"Состав"|"Общее"\]/.test(pages));
-  assert.ok(topics.includes('topic.topicId === null ? "Чат" : topic.title'));
+  assert.ok(topics.includes("topic.topicId === null ? S.groupChat : topic.title"));
   for (const label of [composerLabels.attach, composerLabels.circle, composerLabels.voice]) assert.ok(people.includes(`title="${label}"`), label);
   assert.ok(!/Shift\+Enter — новая строка\{/.test(composer) && composer.includes("composerHelp("));
   assert.ok(chat.includes("Вступить по коду / Новый чат") && !chat.includes("Код, запросы и люди") && !/>Обновить</.test(chat));
