@@ -16,14 +16,23 @@ internal enum class InboxSourceFilter(val source: InboxSource?) {
 internal fun browseInbox(rows: List<InboxRow>, query: String,
     source: InboxSourceFilter = InboxSourceFilter.All, unreadOnly: Boolean = false,
     draftIds: Set<String> = emptySet(), draftsOnly: Boolean = false,
-    unreadFirst: Boolean = false): List<InboxRow> {
+    unreadFirst: Boolean = false, subtitleOf: (InboxRow) -> String = { it.subtitle }): List<InboxRow> {
     val words = chatSearchWords(query)
     val matches = rows.filter { row ->
-        val searchable = normalizeChatSearch("${row.title} ${row.subtitle} ${row.lastBody.orEmpty()}")
+        val searchable = normalizeChatSearch("${row.title} ${subtitleOf(row)} ${row.lastBody.orEmpty()}")
         (source.source == null || row.source == source.source) && (!unreadOnly || row.unread > 0) &&
             (!draftsOnly || row.id in draftIds) && words.all(searchable::contains)
     }
     return if (unreadFirst) matches.sortedByDescending { it.unread > 0 } else matches
+}
+
+/** Подписи строк из ресурсов (#106): данные несут только название группы, слова — здесь. */
+internal class InboxSubtitleCopy(val personal: String, val group: String, val personalIn: (String) -> String)
+
+internal fun inboxSubtitleText(row: InboxRow, copy: InboxSubtitleCopy): String = when (row.source) {
+    InboxSource.GroupDirect -> if (row.subtitle.isBlank()) copy.personal else copy.personalIn(row.subtitle)
+    InboxSource.Group -> row.subtitle.ifBlank { copy.group }
+    else -> row.subtitle.ifBlank { copy.personal }
 }
 
 internal fun unreadInboxConversations(rows: List<InboxRow>): Int = rows.count { it.unread > 0 }

@@ -34,7 +34,7 @@ class PluralsTest {
 
     @Test fun every_new_plural_has_all_russian_forms() {
         listOf("channel_ballot_count", "ux300_android_password_remaining", "ux300_android_password_over",
-            "ux300_android_rename_more", "ux30_study_show_more_homework", "deadlines_title_count").forEach { name ->
+            "ux300_android_rename_more", "ux30_study_show_more_homework").forEach { name ->
             assertEquals(name, setOf("one", "few", "many", "other"), plurals.getValue(name).keys)
         }
     }
@@ -52,9 +52,6 @@ class PluralsTest {
         assertEquals("И ещё 22 пары", say("ux300_android_rename_more", 22))
         assertEquals("Показать ещё 1 задание", say("ux30_study_show_more_homework", 1))
         assertEquals("Показать ещё 5 заданий", say("ux30_study_show_more_homework", 5))
-        assertEquals("Ближайшие сроки: 1 задание", say("deadlines_title_count", 1))
-        assertEquals("Ближайшие сроки: 3 задания", say("deadlines_title_count", 3))
-        assertEquals("Ближайшие сроки: 11 заданий", say("deadlines_title_count", 11))
     }
 
     @Test fun old_single_form_strings_are_gone_and_calls_use_plurals() {
@@ -64,7 +61,7 @@ class PluralsTest {
         val src = File("src/main/java").walkTopDown().filter { it.extension == "kt" }.joinToString("\n") { it.readText() }
         assertFalse(src.contains("R.string.channel_ballot_count"))
         assertTrue(src.contains("R.plurals.channel_ballot_count"))
-        assertTrue(src.contains("R.plurals.deadlines_title_count"))
+        assertTrue(src.contains("DeadlineCounter.res(done)"))
     }
 
     @Test fun empty_day_uses_glossary() {

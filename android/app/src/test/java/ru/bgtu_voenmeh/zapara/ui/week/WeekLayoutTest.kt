@@ -23,13 +23,23 @@ class WeekLayoutTest {
     }
 
     @Test fun cpp_and_hyphenated_rooms_do_not_break() {
-        assertEquals("Программирование на C\u2060+\u2060+", WeekHeader.noBreak("Программирование на C++"))
-        assertEquals("С\u2060+\u2060+", WeekHeader.noBreak("С++"))
-        assertEquals("ВЦ\u20113", WeekHeader.noBreak("ВЦ-3"))
-        assertEquals("229 ГК", WeekHeader.noBreak("229 ГК"))
-        assertEquals("лек - пр", WeekHeader.noBreak("лек - пр"))
+        assertEquals("Программирование на C\u2060+\u2060+", WeekHeader.keepCpp("Программирование на C++"))
+        assertEquals("С\u2060+\u2060+", WeekHeader.keepCpp("С++"))
+        assertEquals("ВЦ\u20113", WeekHeader.noBreakRoom("ВЦ-3"))
+        assertEquals("229 ГК", WeekHeader.noBreakRoom("229 ГК"))
+        assertEquals("лек - пр", WeekHeader.noBreakRoom("лек - пр"))
         // На экране тот же текст: убираем невидимые символы и неразрывный дефис — исходная строка.
-        assertEquals("ВЦ-3", WeekHeader.noBreak("ВЦ-3").replace('\u2011', '-'))
+        assertEquals("ВЦ-3", WeekHeader.noBreakRoom("ВЦ-3").replace('\u2011', '-'))
+    }
+
+    @Test fun hyphenated_lesson_names_still_wrap_only_rooms_keep_the_hyphen() {
+        // #113 follow-up: при fontScale 2.0 «Научно-исследовательская» переносится по дефису.
+        assertEquals("Научно-исследовательская работа", WeekHeader.keepCpp("Научно-исследовательская работа"))
+        assertFalse(WeekHeader.keepCpp("Научно-исследовательская").contains('\u2011'))
+        assertEquals("А\u2011101", WeekHeader.noBreakRoom("А-101"))
+        assertTrue(section.contains("Text(WeekHeader.keepCpp(row.name),"))
+        assertTrue(section.contains("Text(WeekHeader.noBreakRoom(row.room),"))
+        assertFalse(section.contains("WeekHeader.noBreak("))
     }
 
     @Test fun one_header_row_with_tools_and_share_in_the_overflow_menu() {
