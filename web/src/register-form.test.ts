@@ -58,20 +58,15 @@ function lookup(scope: string, name: string): string | undefined {
 }
 /** Действующий цвет переменной в теме (с раскрытием var()). */
 function cssVar(scope: string, name: string) { const raw = lookup(scope, name); assert.ok(raw, `${scope} ${name}`); const v = resolve(scope, raw!); assert.ok(v, `${scope} ${name}: ${raw}`); return v!; }
-/** Запасной цвет из var(--zp-…, #hex) — его видят до #50 и если токена нет. */
-function fallback(scope: string, name: string) {
-  const raw = declarations(scope).get(name); const m = raw?.match(/^var\(--zp-[a-z-]+,\s*(#[0-9a-f]{6})\)$/i);
-  assert.ok(m, `${scope} ${name}: ${raw}`); return m![1];
-}
-
 test("#16: field border ≥3:1 and placeholder ≥4.5:1 in both themes", () => {
   for (const scope of [":root", ':root[data-theme="light"]']) {
     const canvas = cssVar(scope, "canvas"), card = cssVar(scope, "card"), surface = cssVar(scope, "surface");
-    // И запасной цвет, и действующий (токен #50, если он есть) должны держать контраст.
-    for (const border of new Set([fallback(scope, "field-border"), cssVar(scope, "field-border")]))
-      for (const bg of [canvas, card, surface]) assert.ok(ratio(border, bg) >= 3, `${scope} border ${border} on ${bg}: ${ratio(border, bg).toFixed(2)}`);
-    for (const placeholder of new Set([fallback(scope, "field-placeholder"), cssVar(scope, "field-placeholder")]))
-      assert.ok(ratio(placeholder, canvas) >= 4.5, `${scope} placeholder ${placeholder} on ${canvas}`);
+    // Действующий цвет — токен (#50) этой темы; запасных hex в styles.css больше нет (#8, G-1).
+    const border = cssVar(scope, "field-border"), placeholder = cssVar(scope, "field-placeholder");
+    for (const bg of [canvas, card, surface]) assert.ok(ratio(border, bg) >= 3, `${scope} border ${border} on ${bg}: ${ratio(border, bg).toFixed(2)}`);
+    assert.ok(ratio(placeholder, canvas) >= 4.5, `${scope} placeholder ${placeholder} on ${canvas}`);
+    assert.match(lookup(scope, "field-border")!, /^var\(--zp-border-control\)$/);
+    assert.match(lookup(scope, "field-placeholder")!, /^var\(--zp-text-secondary\)$/);
   }
   assert.match(css, /--field-fill: var\(--canvas\)/);
   assert.match(css, /\.field input:focus-visible[^{]*\{ outline: 2px solid var\(--field-focus\)/);
