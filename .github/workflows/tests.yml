@@ -47,6 +47,14 @@ jobs:
       # .NET goes into the runner's tool cache (a stable path, not RUNNER_TEMP), so a runner downloads each SDK once:
       # install-dotnet skips a version that is already there. A hung download (seen for 45 min on one runner) stops
       # after 5 min and is retried once from a clean directory (docs/CI.md).
+      # A directory without .complete is left over from an interrupted install (job cancelled or timed out mid-extract):
+      # drop it, and drop the marker until this job's setup succeeds again.
+      - name: Drop an unfinished .NET install
+        run: |
+          d="${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8"
+          [ -f "$d/.complete" ] || rm -rf "$d"
+          rm -f "$d/.complete"
+
       - id: dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         timeout-minutes: 5
@@ -58,7 +66,7 @@ jobs:
 
       - name: Retry .NET setup from a clean directory
         if: steps.dotnet.outcome == 'failure'
-        run: rm -rf "$RUNNER_TOOL_CACHE/zapara-dotnet-8"
+        run: rm -rf "${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8"
 
       - if: steps.dotnet.outcome == 'failure'
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -67,6 +75,9 @@ jobs:
           DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8
         with:
           dotnet-version: 8.0.x
+
+      - name: Mark the .NET install complete
+        run: touch "${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8/.complete"
 
       - name: Start PostgreSQL 16
         run: |
@@ -224,6 +235,14 @@ jobs:
       # .NET goes into the runner's tool cache (a stable path, not RUNNER_TEMP), so a runner downloads each SDK once:
       # install-dotnet skips a version that is already there. A hung download (seen for 45 min on one runner) stops
       # after 5 min and is retried once from a clean directory (docs/CI.md).
+      # A directory without .complete is left over from an interrupted install (job cancelled or timed out mid-extract):
+      # drop it, and drop the marker until this job's setup succeeds again.
+      - name: Drop an unfinished .NET install
+        run: |
+          d="${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8"
+          [ -f "$d/.complete" ] || rm -rf "$d"
+          rm -f "$d/.complete"
+
       - id: dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         timeout-minutes: 5
@@ -235,7 +254,7 @@ jobs:
 
       - name: Retry .NET setup from a clean directory
         if: steps.dotnet.outcome == 'failure'
-        run: rm -rf "$RUNNER_TOOL_CACHE/zapara-dotnet-8"
+        run: rm -rf "${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8"
 
       - if: steps.dotnet.outcome == 'failure'
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -244,6 +263,9 @@ jobs:
           DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8
         with:
           dotnet-version: 8.0.x
+
+      - name: Mark the .NET install complete
+        run: touch "${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8/.complete"
 
       - name: npm ci
         working-directory: web
@@ -298,6 +320,14 @@ jobs:
       # .NET goes into the runner's tool cache (a stable path, not RUNNER_TEMP), so a runner downloads each SDK once:
       # install-dotnet skips a version that is already there. A hung download (seen for 45 min on one runner) stops
       # after 5 min and is retried once from a clean directory (docs/CI.md).
+      # A directory without .complete is left over from an interrupted install (job cancelled or timed out mid-extract):
+      # drop it, and drop the marker until this job's setup succeeds again.
+      - name: Drop an unfinished .NET install
+        run: |
+          d="${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8-10"
+          [ -f "$d/.complete" ] || rm -rf "$d"
+          rm -f "$d/.complete"
+
       - id: dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         timeout-minutes: 5
@@ -311,7 +341,7 @@ jobs:
 
       - name: Retry .NET setup from a clean directory
         if: steps.dotnet.outcome == 'failure'
-        run: rm -rf "$RUNNER_TOOL_CACHE/zapara-dotnet-8-10"
+        run: rm -rf "${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8-10"
 
       - if: steps.dotnet.outcome == 'failure'
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -322,6 +352,9 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+
+      - name: Mark the .NET install complete
+        run: touch "${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8-10/.complete"
 
       # Avalonia headless renders text through libSkiaSharp, which needs libfontconfig.so.1 and at least one
       # font (otherwise "Default font family name can't be null or empty"). The runner user has no sudo, so
