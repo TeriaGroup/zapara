@@ -849,12 +849,8 @@ private fun PasswordProgress(value: String) {
         else -> stringResource(R.string.ux300_android_password_length_ok)
     }
     Text(label, style = Zapara.typography.caption,
-        // #109: «осталось N символов» — подсказка по ходу ввода, нейтральным цветом; warn — только для ошибки.
-        color = when {
-            count in 12..128 && !value.contains('\u0000') -> Zapara.colors.ok
-            count < 12 && !value.contains('\u0000') -> Zapara.colors.text2
-            else -> Zapara.colors.warn
-        })
+        color = if (count in 12..128 && !value.contains('\u0000')) Zapara.colors.ok
+            else Zapara.colors.warn)
 }
 
 @Composable

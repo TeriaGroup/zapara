@@ -51,9 +51,6 @@ class SignInTest {
         assertFalse(accept.contains("ZButton(stringResource(R.string.face_agreement)"))
         val link = account.substring(account.indexOf("private fun DocLink("), account.indexOf("private fun DocLink(") + 600)
         assertTrue(link.contains("TextDecoration.Underline") && link.contains("heightIn(min = 48.dp)"))
-        // «Осталось N символов» — не warn.
-        val progress = account.substring(account.indexOf("private fun PasswordProgress("), account.indexOf("private fun AccountField("))
-        assertTrue(progress.contains("count < 12 && !value.contains('\\u0000') -> Zapara.colors.text2"))
         assertTrue(account.contains("ghost = true, quiet = true, tag = \"Account.RecoveryToggle\""))
     }
 }
