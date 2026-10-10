@@ -95,14 +95,15 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
                                 placeholder = { Text(stringResource(R.string.next_community_search)) },
                                 singleLine = true, leadingIcon = { ZIcon(R.drawable.ic_search, null) })
                         }
-                        item("result") {
+                        if (CatalogRules.showCounters(state.communities.size) || query.isNotBlank()) item("result") {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                                 Column(Modifier.weight(1f)) {
                                     Text(stringResource(R.string.next_community_results, visible.size, state.communities.size),
                                         style = Zapara.typography.caption, color = c.text2)
-                                    Text(stringResource(R.string.community_detail_joined, state.communities.count { it.role != null }),
-                                        style = Zapara.typography.caption, color = c.text2)
+                                    if (CatalogRules.showCounters(state.communities.size))
+                                        Text(stringResource(R.string.community_detail_joined, state.communities.count { it.role != null }),
+                                            style = Zapara.typography.caption, color = c.text2)
                                 }
                                 if (query.isNotBlank()) ZButton(stringResource(R.string.next_community_clear),
                                     { query = "" }, ghost = true, tag = "Community.ClearSearch")
@@ -124,29 +125,17 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
                             tag = "Community.Row.${item.communityId}",
                             modifier = Modifier.fillMaxWidth().appear(index)
                         ) {
-                            Text(item.name, style = Zapara.typography.bodyStrong, color = c.text1)
+                            // #109 / AN-22: имя и один чип статуса (роль / заявка / вступление) в одной строке.
+                            val status = CatalogRules.status(item.role, item.joinStatus, item.communityId in state.joining)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                Text(item.name, style = Zapara.typography.bodyStrong, color = c.text1, modifier = Modifier.weight(1f))
+                                status?.let { ZChip(stringResource(it), tag = "Community.Status.${item.communityId}") }
+                            }
                             if (item.description.isNotEmpty()) {
                                 Text(item.description, style = Zapara.typography.caption, color = c.text2)
                             }
-                            item.role?.let { role ->
-                                ZChip(stringResource(when (role) {
-                                    "headman" -> R.string.group_role_headman
-                                    "curator" -> R.string.group_role_curator
-                                    else -> R.string.group_role_member
-                                }), tag = "Community.Role.${item.communityId}")
-                            }
-                            if (item.communityId in state.joining) {
-                                Text(stringResource(R.string.ux30_community_joining), style = Zapara.typography.caption, color = c.text2)
-                            } else if (item.joinStatus == "pending") {
-                                Text(
-                                    stringResource(R.string.community_pending),
-                                    style = Zapara.typography.caption,
-                                    color = c.text2,
-                                    modifier = Modifier.testTag("Community.Pending.${item.communityId}")
-                                )
-                            } else if (item.joinStatus == "accepted" && item.role == null) {
-                                Text(stringResource(R.string.ux30_community_join_accepted), style = Zapara.typography.caption, color = c.text2)
-                            } else if (item.canJoin) {
+                            if (status == null && item.canJoin) {
                                 ZButton(
                                     stringResource(R.string.community_join),
                                     { onEvent(CommunitiesEvent.Join(item.communityId)) },

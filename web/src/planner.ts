@@ -1,6 +1,8 @@
 import { addDays, isoDay, lessonsOn, sameSubject } from "./parity.ts";
 import { pairCount } from "./map-viewport.ts";
 import type { HomeworkItem, Lesson } from "./types";
+import { S } from "./strings.gen.ts";
+import { fmt } from "./schedule-text.ts";
 export function localDay(value: string): Date | null {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value))
         return null;
@@ -71,7 +73,7 @@ export function absoluteDate(date: Date) { return date.toLocaleDateString("ru-RU
 export function endSentence(text: string) { return /[.!?…]$/.test(text.trimEnd()) ? text.trimEnd() : text.trimEnd() + "."; }
 /** R2-14: сводка дня в шапке — «Пар нет» вместо «0 пар»; с парами — «2 пары · 09:00–14:15». */
 export function dayOverviewText(lessons: readonly { timeStart: string; timeEnd: string }[]) {
-    if (lessons.length === 0) return "Пар нет";
+    if (lessons.length === 0) return S.emptyDay;
     return `${pairCount(lessons.length)} · ${lessons[0].timeStart}–${lessons[lessons.length - 1].timeEnd}`;
 }
 
@@ -79,7 +81,8 @@ export function dayOverviewText(lessons: readonly { timeStart: string; timeEnd: 
 export function shortDate(date: Date) { return date.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short" }); }
 /** Строка пустого дня. G-3: как на desktop — «Следующая пара: пн, 12 окт., 10:50» (не «Ближайшие пары — …»). */
 export function nextLessonsLine(next?: Date | null, time?: string | null) {
-    return next ? `Следующая пара: ${shortDate(next)}${time ? `, ${time}` : ""}` : "В ближайшие три недели в сохранённом расписании пар нет.";
+    // Общий каталог (G-3): S.nextLessonLine = «Следующая пара: {0}, {1}»; без времени — тот же шаблон без «, {1}».
+    return next ? (time ? fmt(S.nextLessonLine, shortDate(next), time) : fmt(S.nextLessonLine.replace(", {1}", ""), shortDate(next))) : "В ближайшие три недели в сохранённом расписании пар нет.";
 }
 export function personalHomeworkDue(item: HomeworkItem, lessons: Lesson[], period: import("./types").Period, invert: boolean): Date | null {
     const created = item.legacyCreatedLocalDate ? localDay(item.legacyCreatedLocalDate) : new Date(item.created);

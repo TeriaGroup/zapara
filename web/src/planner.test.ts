@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import * as planner from "./planner.ts";
 import { absoluteDate, freeGaps, gapsBeforeLessons, hasLessonOverlap, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner.ts";
 import type { HomeworkItem, Lesson } from "./types";
@@ -50,4 +51,14 @@ test("R2-14: на пустом дне — «Пар нет», без нулево
   assert.doesNotMatch(pages, /pairCount\(lessons\.length\)/);
   const css = readFileSync(new URL("./mobile-study.css", import.meta.url), "utf8");
   assert.match(css, /@media \(min-width: 960px\) \{\n  \.study-day-action-links \{ display: none; \}/);
+});
+
+test("empty day and next-lesson line come from the shared catalog, not literals", () => {
+  const src = readFileSync(new URL("./planner.ts", import.meta.url), "utf8");
+  const page = readFileSync(new URL("./pages.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /"Пар нет"|`Следующая пара:/);
+  assert.match(src, /S\.emptyDay/);
+  assert.match(src, /S\.nextLessonLine/);
+  assert.doesNotMatch(page, /<h2>Пар нет<\/h2>/);
+  assert.match(page, /<h2>\{S\.emptyDay\}<\/h2>/);
 });

@@ -7,6 +7,10 @@ import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 
 object ShellLogic {
+    /** #108 / AN-17: в открытой беседе (личной или чате группы) нижней панели нет; назад — кнопкой в шапке. */
+    fun showBottomBar(current: Section, conversationOpen: Boolean): Boolean =
+        !(conversationOpen && (current == Section.Chat || current == Section.Group))
+
     fun isStale(value: String?, now: LocalDateTime): Boolean {
         if (value == null) return true
         val parsed = try { OffsetDateTime.parse(value).toLocalDateTime() }
