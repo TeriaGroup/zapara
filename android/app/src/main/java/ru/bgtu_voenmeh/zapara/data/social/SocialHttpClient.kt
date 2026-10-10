@@ -38,14 +38,14 @@ suspend fun loadSocialUpdates(knownIds: Set<String>, load: suspend (String?) -> 
     val cursors = mutableSetOf<String>()
     var collected = page.messages
     while (knownIds.isNotEmpty() && page.hasMore && page.messages.none { it.id in knownIds }) {
-        val before = page.messages.firstOrNull()?.id ?: error("Пустая страница")
-        check(cursors.add(before)) { "Повтор страницы" }
+        val before = page.messages.firstOrNull()?.id ?: error("Empty message page")
+        check(cursors.add(before)) { "Repeated message page cursor" }
         page = load(before)
         collected = page.messages + collected
     }
     return SocialPage(collected.distinctBy { it.id }, hasMore)
 }
-class SocialFailure(val status: Int) : Exception("Не удалось выполнить запрос")
+class SocialFailure(val status: Int) : Exception("Social API request failed with HTTP $status")
 
 class SocialHttpClient(private val transport: HttpExchange, private val scope: AccountServerScope) {
     suspend fun home(token: String): SocialHome = parseHome(request(token, "GET", "/home").obj())

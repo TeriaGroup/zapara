@@ -16,7 +16,7 @@
     "parityWeek": { "ru": "{0} неделя", "desktop": ["parityWeek"] },
     "deadlinesTitle": { "ru": "Ближайшие сроки", "desktop": ["deadlinesTitle"] },
     "toDeadlines": { "ru": "К срокам домашки", "desktop": ["toDeadlines"] },
-    "emptyDay": { "ru": "Пар нет", "desktop": ["noLessons", "noLessonsShort", "noLessonsDay", "emptyWeek"], "$comment": "G-3: пустой день везде «Пар нет», не «Нет занятий»." },
+    "emptyDay": { "ru": "Пар нет", "desktop": ["noLessons", "noLessonsShort", "noLessonsDay", "emptyWeek"], "android": ["schedule_empty_title"], "$comment": "G-3: пустой день везде «Пар нет», не «Нет занятий»." },
     "nextLessonLine": { "ru": "Следующая пара: {0}, {1}", "desktop": ["nextLessonHint"], "$comment": "G-3: «Следующая пара: пн, 12 окт., 10:50»; {0} — «пн, 12 окт.», {1} — время." },
     "breaksTitle": { "ru": "Перерывы и окна", "desktop": ["breaksTitle"], "$comment": "G-3: в списке и перерывы (< 90 мин), и окна (≥ 90 мин) — «Перерывы и окна», как на web." },
     "homeworkOpenDone": { "ru": "открыто {0} · выполнено {1}", "desktop": ["hwOpenDone"], "$comment": "G-3, глоссарий «Счётчики»: «открыто 5 · выполнено 2». Один ключ для счётчика домашки на web и desktop." },
