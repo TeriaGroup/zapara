@@ -60,7 +60,7 @@ Android (`gradlew`), `scripts/timetable/Verify-Milestone.ps1`.
 
 ## Что нужно на раннере
 
-SDK и интерпретаторы ставят сами задания: `actions/setup-dotnet` (.NET 8 в `$RUNNER_TOOL_CACHE/dotnet`),
+SDK и интерпретаторы ставят сами задания: `actions/setup-dotnet` (.NET 8 в `$RUNNER_TEMP/dotnet`: каталоги по умолчанию пользователю раннера недоступны для записи),
 `actions/setup-node` (Node 24), `shivammathur/setup-php` (PHP 8.3, `pdo_pgsql`, `pdo_sqlite`, `intl`, `zip`, `mbstring`, Composer 2).
 Предустановить нужно:
 
