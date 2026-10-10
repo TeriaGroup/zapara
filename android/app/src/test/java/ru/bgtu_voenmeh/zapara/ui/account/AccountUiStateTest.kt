@@ -221,6 +221,73 @@ class AccountUiStateTest {
     @Before fun setMain() { Dispatchers.setMain(dispatcher) }
     @After fun reset() { Dispatchers.resetMain() }
 
+    // #157: сбои внешнего входа гостя после возврата из браузера — это сбои формы: смена «Вход / Регистрация» их снимает.
+    @Test fun guest_external_callback_failures_are_cleared_by_a_mode_switch() = runTest(dispatcher) {
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson(vk = true)
+            else -> error(route(call))
+        } }
+        val guestText = copy(R.string.account_guest)
+        for (fail in listOf<(AccountViewModel) -> Unit>(
+            { it.externalResult(ExternalReturnResult.Failed) },
+            { it.externalResult(ExternalReturnResult.Expired) },
+            { it.externalResult(ExternalReturnResult.TransitionFailed) },
+            { it.externalFailure(null) },
+            { it.externalFailure(AccountClientFailure.ExternalAttemptExpired) })) {
+            val vm = guestVm(http) {}
+            advanceUntilIdle()
+            fail(vm); advanceUntilIdle()
+            val shown = vm.state.value.status
+            assertTrue(shown != guestText)
+            assertEquals(shown, vm.state.value.formFailure)
+            vm.onEvent(AccountEvent.ToggleRegistration)
+            assertEquals(guestText, vm.state.value.status)
+        }
+    }
+
+    // #157: сбой не из формы (здесь — запрос восстановления пароля) с тем же текстом, что и прежний сбой входа,
+    // не наследует метку сбоя формы и переживает смену режима.
+    @Test fun a_non_form_failure_with_the_same_text_drops_the_form_marker() = runTest(dispatcher) {
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson(recovery = true)
+            else -> error(route(call))
+        } }
+        val vm = guestVm(http) {}
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.Username("test.user")); vm.onEvent(AccountEvent.Password("long-password-12"))
+        vm.onEvent(AccountEvent.Submit); advanceUntilIdle()
+        val failed = copy(R.string.account_failed)
+        assertEquals(failed, vm.state.value.status)
+        assertEquals(failed, vm.state.value.formFailure)
+        vm.onEvent(AccountEvent.RequestReset); advanceUntilIdle()
+        assertEquals(failed, vm.state.value.status)
+        assertNull(vm.state.value.formFailure)
+        vm.onEvent(AccountEvent.ToggleRegistration)
+        assertEquals(failed, vm.state.value.status)
+    }
+
+    // #157: у вошедшего профиля (привязка VK/Яндекс) сбой после возврата — не сбой формы входа.
+    @Test fun signed_in_external_callback_failure_is_not_a_form_failure() = runTest(dispatcher) {
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson(vk = true)
+            "GET account/me" -> passwordMeJson()
+            "GET account/identities" -> json("[]")
+            else -> error(route(call))
+        } }
+        val vm = signedIn(http, testToken("za_", 1))
+        advanceUntilIdle()
+        vm.externalResult(ExternalReturnResult.Failed); advanceUntilIdle()
+        assertNull(vm.state.value.formFailure)
+    }
+
+    // #157: сбой чтения владельца операции (ownerStamp) при входе идёт через тот же помощник, что и прочие сбои формы.
+    @Test fun owner_stamp_failure_honours_the_form_flag() {
+        val vm = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/account/AccountViewModel.kt").readText()
+        val at = vm.indexOf("if (stamp == null) {")
+        assertTrue(at > 0)
+        assertTrue(vm.substring(at, vm.indexOf("return@launch", at)).contains(".fail(runtime.strings(R.string.account_failed), form)"))
+    }
+
     @Test
     fun guest_card_is_not_a_nav_section() {
         val guest = AccountUiState(ready = true, configured = true, guest = true, status = "Гостевой профиль: данные доступны без аккаунта и сети.")

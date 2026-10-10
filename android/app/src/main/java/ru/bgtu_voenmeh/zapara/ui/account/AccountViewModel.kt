@@ -708,7 +708,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                     catch (_: Exception) { null }
                 val stamp = owner
                 if (stamp == null) {
-                    if (revision == identityRevision) mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_failed)) }
+                    if (revision == identityRevision) mutable.update { it.copy(busy = false).fail(runtime.strings(R.string.account_failed), form) }
                     return@launch
                 }
                 if (!ownerCurrent(stamp)) return@launch
@@ -767,7 +767,10 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
 
     /** Сбой формы входа/регистрации: показать в строке и пометить, что это именно он (см. [AccountUiState.formFailure]). */
     private fun AccountUiState.formFail(text: String): AccountUiState = copy(status = text, formFailure = text)
-    private fun AccountUiState.fail(text: String, form: Boolean): AccountUiState = if (form) formFail(text) else copy(status = text)
+    /** Сбой не из формы становится текущей строкой — прежняя метка сбоя формы к ней уже не относится (#157). */
+    private fun AccountUiState.fail(text: String, form: Boolean): AccountUiState = if (form) formFail(text) else copy(status = text, formFailure = null)
+    /** #157: результат внешнего входа приходит после возврата из браузера; пока профиль гостевой, это сбой формы входа. */
+    private fun AccountUiState.externalFail(text: String): AccountUiState = fail(text, form = guest)
 
     private fun AccountUiState.hide(failure: AccountClientFailure, provider: String?): AccountUiState = when (failure) {
         AccountClientFailure.ProviderUnavailable -> when (provider) {
@@ -835,9 +838,9 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: AccountClientException) {
-                        if (revision == identityRevision) mutable.update { it.copy(status = failureText(e.failure)) }
+                        if (revision == identityRevision) mutable.update { it.externalFail(failureText(e.failure)) }
                     } catch (_: Exception) {
-                        if (revision == identityRevision) mutable.update { it.copy(status = runtime.strings(R.string.account_reauth)) }
+                        if (revision == identityRevision) mutable.update { it.externalFail(runtime.strings(R.string.account_reauth)) }
                     }
                 }
             }
@@ -851,9 +854,9 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 }
             }
             ExternalReturnResult.ProfileChanged -> mutable.update { it.copy(status = runtime.strings(R.string.account_external_profile_changed)) }
-            ExternalReturnResult.Failed -> mutable.update { it.copy(status = runtime.strings(R.string.account_external_failed)) }
-            ExternalReturnResult.Expired -> mutable.update { it.copy(status = runtime.strings(R.string.account_external_expired)) }
-            ExternalReturnResult.TransitionFailed -> mutable.update { it.copy(status = runtime.strings(R.string.account_transition_failed)) }
+            ExternalReturnResult.Failed -> mutable.update { it.externalFail(runtime.strings(R.string.account_external_failed)) }
+            ExternalReturnResult.Expired -> mutable.update { it.externalFail(runtime.strings(R.string.account_external_expired)) }
+            ExternalReturnResult.TransitionFailed -> mutable.update { it.externalFail(runtime.strings(R.string.account_transition_failed)) }
             else -> Unit
         }
     }
@@ -864,7 +867,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             null -> runtime.strings(R.string.account_external_failed)
             else -> failureText(failure)
         }
-        mutable.update { it.copy(status = message) }
+        mutable.update { it.externalFail(message) }
     }
 
     companion object {
