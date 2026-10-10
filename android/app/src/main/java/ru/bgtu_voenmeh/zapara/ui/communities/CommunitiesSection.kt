@@ -195,13 +195,13 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
                 item {
                     ZCard(Modifier.fillMaxWidth().appear(0), tag = "Community.Members") {
                         Text("${stringResource(R.string.community_members)} · ${selected.members.size}", style = Zapara.typography.section, color = c.text1)
-                        selected.members.forEachIndexed { index, person -> CommunityPersonRow(person.name, person.login, index, "Community.Member.$index") }
+                        selected.members.forEachIndexed { index, person -> CommunityPersonRow(person.name, person.login, person.userId, "Community.Member.$index") }
                     }
                 }
                 item {
                     ZCard(Modifier.fillMaxWidth().appear(1), tag = "Community.Staff") {
                         Text("${stringResource(R.string.community_staff)} · ${selected.staff.size}", style = Zapara.typography.section, color = c.text1)
-                        selected.staff.forEachIndexed { index, person -> CommunityPersonRow(person.name, person.login, index, "Community.StaffPerson.$index") }
+                        selected.staff.forEachIndexed { index, person -> CommunityPersonRow(person.name, person.login, person.userId, "Community.StaffPerson.$index") }
                     }
                 }
             }
@@ -212,7 +212,7 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
                 }
                 items(selected.joinRequests, key = { it.requestId }) { request ->
                     ZCard(Modifier.fillMaxWidth(), tag = "Community.Request.${request.requestId}") {
-                        CommunityPersonRow(request.name, request.login, selected.joinRequests.indexOf(request), "Community.RequestPerson.${request.requestId}")
+                        CommunityPersonRow(request.name, request.login, request.userId, "Community.RequestPerson.${request.requestId}")
                         Text(stringResource(R.string.community_pending), style = Zapara.typography.caption, color = c.text2)
                         if (request.canResolve) {
                             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
@@ -311,11 +311,12 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
 
 /** #104 / AN-24: имя, под ним логин (если отличается); без имени — «Участник N», userId не показываем. */
 @Composable
-private fun CommunityPersonRow(name: String?, login: String?, index: Int, tag: String) {
+private fun CommunityPersonRow(name: String?, login: String?, userId: String, tag: String) {
     val c = Zapara.colors
+    // userId не печатается: без имени — постоянный номер человека (#115 follow-up).
+    val shown = name ?: stringResource(R.string.community_person_unnamed, CommunityPeople.stableNumber(userId))
     Column(Modifier.fillMaxWidth().testTag(tag)) {
-        Text(name ?: stringResource(R.string.community_person_unnamed, index + 1),
-            style = Zapara.typography.body, color = c.text1)
+        Text(shown, style = Zapara.typography.body, color = c.text1)
         if (login != null) Text(login, style = Zapara.typography.caption, color = c.text2)
     }
 }
