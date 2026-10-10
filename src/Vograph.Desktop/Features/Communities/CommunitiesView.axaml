@@ -14,10 +14,11 @@
                    AutomationProperties.AutomationId="Community.Status" />
       </StackPanel>
 
-      <c:EmptyState IsVisible="{Binding NeedAccount}" Title="{loc:T communityNeedAccount}"
-                    Hint="{loc:T accountIsolation}" Icon="{StaticResource Icon.Friends}" Margin="0,24"
+      <c:EmptyState IsVisible="{Binding NeedAccount}" Title="{loc:T signInRequired}"
+                    Hint="{Binding NeedAccountHint}" Icon="{StaticResource Icon.Friends}" Margin="0,24"
                     AutomationProperties.AutomationId="Community.NeedAccount" />
-      <Button Content="Открыть настройки аккаунта" Command="{Binding OpenAccountCommand}" IsVisible="{Binding NeedAccount}" HorizontalAlignment="Left" />
+      <Button Classes="primary" Content="{loc:T accountLogin}" Command="{Binding OpenAccountCommand}" IsVisible="{Binding ShowSignIn}" HorizontalAlignment="Center"
+              AutomationProperties.AutomationId="Community.SignIn" />
       <Button Content="Повторить загрузку сообществ" Command="{Binding RetryCommunitiesCommand}" IsVisible="{Binding LoadFailed}" HorizontalAlignment="Left" />
       <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T communityEmpty}"
                     Icon="{StaticResource Icon.Friends}" Margin="0,24"

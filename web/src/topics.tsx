@@ -12,6 +12,7 @@ import { unreadBadgeDescription, unreadBadgeText } from "./groupBrowse";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { timetableSubjects } from "./community-timetable";
 import { Icon } from "./icons";
+import { topicIcon } from "./topic-icon";
 import type { AccessRule, GroupSpace, GroupTopic, TopicAccess } from "./types";
 export const topicTemplates = [
     { template: "chat", kind: "chat", title: "Чат", icon: "💬", description: "Сообщения и вложения" },
@@ -27,7 +28,8 @@ export const powerTitles: Record<string, string> = { read: "Просматрив
 export function TopicMark({ topic }: {
     topic: GroupTopic;
 }) {
-    return <span className="topic-icon">{topic.icon === "💬" ? <Icon name="chat"/> : topic.icon === "📌" ? <Icon name="pin"/> : topic.icon === "🗳️" ? <Icon name="ballot"/> : topic.icon === "📚" ? <Icon name="homework"/> : topic.icon}</span>;
+    const view = topicIcon(topic.icon, topic.kind);
+    return <span className="topic-icon" aria-hidden="true">{"icon" in view ? <Icon name={view.icon}/> : view.text}</span>;
 }
 function failure(error: unknown) { return error instanceof Error && error.message === "access-refresh-failed" ? "Доступ изменился. Актуальные настройки не загрузились. Ваши правила сохранены; повторите проверку последствий." : error instanceof Error && error.message === "409" ? "Настройки изменились. Загружена актуальная версия; ваши несохранённые поля оставлены в форме. Проверьте их перед повторным сохранением." : error instanceof Error && error.message === "403" ? "Доступ к каналу изменился" : "Изменение не сохранено. Ввод оставлен в форме."; }
 const emptyChannelFields = () => ({ title: "", icon: "💬", template: "chat", description: "", categoryId: "", subject: "", position: 0, accent: "default" as import("./types").ChannelAccent, pinned: false, writePolicy: "all" as "all" | "managers" });

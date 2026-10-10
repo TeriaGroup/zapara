@@ -30,7 +30,7 @@ public class ResourceKeysTests
         var root = Path.Combine(RepoRoot(), "src", "Vograph.Desktop");
         var keys = Directory.EnumerateFiles(root, "*.axaml", SearchOption.AllDirectories)
             .Where(f => !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar) && !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
-            .SelectMany(f => Regex.Matches(File.ReadAllText(f), @"\{(?:Dynamic|Static)Resource ((?:Brush|Icon|Radius|Shadow)\.[A-Za-z0-9_.]+)\}").Select(m => m.Groups[1].Value))
+            .SelectMany(f => Regex.Matches(File.ReadAllText(f), @"\{(?:Dynamic|Static)Resource ((?:Brush|Icon|Radius|Shadow|Zp)\.[A-Za-z0-9_.]+)\}").Select(m => m.Groups[1].Value))
             .Distinct()
             .OrderBy(k => k)
             .ToList();

@@ -8,7 +8,10 @@ public class I18nService
     private readonly Dictionary<string, string> _dict = new(StringComparer.OrdinalIgnoreCase)
     {
             ["accountTitle"] = "Аккаунт",
-            ["accountUnconfigured"] = "Сервер аккаунтов не настроен",
+            ["accountUnconfigured"] = "Вход временно недоступен. Расписание, карты и домашка работают без аккаунта.",
+            ["accountChecking"] = "Проверяем, доступен ли вход…",
+            ["accountCapabilitiesFailed"] = "Сервер входа не отвечает. Расписание, карты и домашка работают без аккаунта.",
+            ["signInRequired"] = "Недоступно без входа",
             ["accountGuest"] = "Гостевой профиль: данные доступны без аккаунта и сети.",
             ["accountLocal"] = "Вы вошли в аккаунт. Общие данные и функции аккаунта доступны при подключении к серверу.",
             ["accountIsolation"] = "Данные гостя и каждого аккаунта хранятся отдельно. Автоматического переноса и отправки личных данных нет.",
@@ -87,7 +90,7 @@ public class I18nService
             ["syncExpired"] = "Операция синхронизации устарела — повторите действие",
             ["syncOffline"] = "Сервер недоступен. Синхронизация отложена; локальные данные сохранены.",
             // Header
-            ["appTitle"] = "Военмех - расписание и карты",
+            ["appTitle"] = "Военмех — расписание и карты",
             ["headerHint"] = "Группа {0} · {1} неделя",
             ["headerSub"] = "Расписание Военмеха · завтра по умолчанию",
             ["odd"] = "нечетная",
@@ -172,7 +175,7 @@ public class I18nService
             ["nextPairHint"] = "Дата следующей пары по этому предмету",
             ["weekNum"] = "неделя {0}",
             // Self-update (GitHub releases)
-            ["autoUpdate"] = "Автообновление с GitHub",
+            ["autoUpdate"] = "Обновлять автоматически",
             ["updTitle"] = "Обновление",
             ["updDownloading"] = "Скачивание обновления {0}...",
             ["updReady"] = "Обновление {0} скачано. Перезапустить сейчас для установки?",
@@ -274,14 +277,16 @@ public class I18nService
             ["syncLanFail"] = "Не удалось запустить сервер: {0}",
             ["syncLanBusy"] = "Порт {0} занят другой программой",
             ["syncExported"] = "Экспорт сохранён: {0}",
+            // #20: подсказки и имена кнопок сайдбара и темы
+            ["menuCollapseTip"] = "Свернуть меню (Ctrl+B)", ["menuExpandTip"] = "Развернуть меню (Ctrl+B)", ["themeToDark"] = "Тёмная тема", ["themeToLight"] = "Светлая тема", ["sidebarToggleName"] = "Свернуть меню", ["sidebarExpandName"] = "Развернуть меню", ["pastLesson"] = "Прошла",
             // Updates card / sidebar item («updTitle», «autoUpdate» and «updDownloading» above are reused as they are)
             ["setUpdates"] = "Обновления", ["updIdle"] = "Проверка ещё не выполнялась", ["updChecking"] = "Проверка…",
-            ["updUpToDate"] = "Актуальная версия {0} · проверено {1}", ["updAvailable"] = "Доступна {0}",
+            ["updUpToDate"] = "Версия {0} — последняя · проверено в {1}", ["updAvailable"] = "Доступна {0}",
             ["updDownloaded"] = "Скачано {0} — готово к установке", ["updInstall"] = "Установить и перезапустить", ["updLater"] = "Позже",
-            ["updCheck"] = "Проверить обновление", ["updInBrowser"] = "В браузере",
-            ["updRelease"] = "Релизы", ["updAlpha"] = "Альфа",
-            ["updChannelHint"] = "Релизы берутся из открытой репы. Альфа берётся из закрытой, для неё нужен ключ GitHub.",
-            ["updToken"] = "Ключ GitHub", ["updNeedToken"] = "Для альфы впишите ключ GitHub",
+            ["updCheck"] = "Проверить обновление", ["updInBrowser"] = "Открыть страницу загрузки",
+            ["updRelease"] = "Стабильная", ["updAlpha"] = "Тестовая (нужен код доступа)",
+            ["updChannelHint"] = "Стабильная версия подходит всем. Тестовая — ранние сборки для тех, кому выдали код доступа.",
+            ["updToken"] = "Код доступа", ["updNeedToken"] = "Для тестовой версии впишите код доступа",
             ["updRateLimited"] = "GitHub ограничил запросы с вашей сети (лимит или VPN). Попробуйте позже или откройте страницу релизов",
             ["updFailWith"] = "Не удалось проверить обновление: {0}", ["updNoReleases"] = "Релизов для Windows не найдено",
             ["updUpdatingTo"] = "Обновляюсь до {0}…",

@@ -42,14 +42,14 @@ test("switching groups drops the previous community before the lookup answers", 
   );
   assert.deepEqual(missed, ["", ""]);
 
-  const failed: { communityId: string; failed: boolean }[] = [];
+  const failed: { communityId: string; failed: boolean; pending?: boolean }[] = [];
   await followGroupCommunity(
     { authenticated: true, groupId: "3313" },
     async () => { throw new Error("down"); },
     state => failed.push(state),
   );
   assert.deepEqual(failed, [
-    { communityId: "", failed: false },
+    { communityId: "", failed: false, pending: true },
     { communityId: "", failed: true },
   ]);
 });

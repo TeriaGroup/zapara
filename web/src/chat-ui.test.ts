@@ -45,9 +45,13 @@ test("files compiled by stubbed UI tests inline the same wording", async () => {
   assert.ok(chat.includes("Вступить по коду / Новый чат") && !chat.includes("Код, запросы и люди") && !/>Обновить</.test(chat));
 });
 
-test("channel emoji stay as typed by default (icon replacement is a constant set to off)", async () => {
+test("channel headings use TopicMark from #52: icon names never show as text, user emoji stay as typed", async () => {
   const { readFile } = await import("node:fs/promises");
+  const { topicIcon } = await import("./topic-icon.ts");
   const pages = await readFile(new URL("./pages.tsx", import.meta.url), "utf8");
-  assert.match(pages, /^const replaceChannelEmojiWithIcons = false;$/m);
-  assert.equal((pages.match(/replaceChannelEmojiWithIcons \? <TopicMark topic=\{thread\} \/> : thread\.icon/g) || []).length, 2);
+  assert.equal((pages.match(/<TopicMark topic=\{thread\} \/> \{thread\.title\}/g) || []).length, 2);
+  assert.doesNotMatch(pages, /thread\.icon/);
+  assert.match(pages, /setThread\("list"\); \}\}>Каналы<\/button>/);
+  assert.deepEqual(topicIcon("megaphone", "chat"), { icon: "megaphone" });
+  assert.deepEqual(topicIcon("🦄", "chat"), { text: "🦄" });
 });

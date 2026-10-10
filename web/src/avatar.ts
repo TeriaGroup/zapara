@@ -20,13 +20,28 @@ export function validateAvatarFile(file: Pick<File, "type" | "size">): string | 
 }
 
 export function createAvatarCache(
-  load: (key: string, etag: string | null) => Promise<string | null | { url?: string | null; etag?: string | null; notModified?: boolean }>,
+  load: (key: string, etag: string | null) => Promise<string | null | { url?: string | null; etag?: string | null; notModified?: boolean; missing?: boolean }>,
   maxEntries = 96,
   revoke: (url: string) => void = URL.revokeObjectURL,
+  // Сервер ответил «аватара нет» (404): не спрашиваем снова при каждом обновлении раз в минуту и при возврате на вкладку (#34).
+  missingTtl = 10 * 60_000,
+  now: () => number = Date.now,
 ) {
   type Entry = { value: string | null; etag: string | null; pending: Promise<string | null> | null; refs: number; retired: boolean; revoked: boolean };
   const entries = new Map<string, Entry>();
   const listeners = new Set<(key?: string) => void>();
+  const missing = new Map<string, number>();
+  const knownMissing = (key: string) => {
+    const until = missing.get(key);
+    if (until === undefined) return false;
+    if (until > now()) return true;
+    missing.delete(key);
+    return false;
+  };
+  const remember = (key: string, next: { url: string | null; missing: boolean }) => {
+    if (next.missing && !next.url) missing.set(key, now() + missingTtl);
+    else if (next.url) missing.delete(key);
+  };
   let owner = "";
   let epoch = 0;
   let sweepTimer: ReturnType<typeof setTimeout> | null = null;
@@ -59,8 +74,8 @@ export function createAvatarCache(
   function notify(key?: string) { for (const listener of listeners) listener(key); }
   function loaded(result: Awaited<ReturnType<typeof load>>) {
     return typeof result === "object" && result !== null
-      ? { url: result.url ?? null, etag: result.etag ?? null, notModified: result.notModified === true }
-      : { url: result, etag: null, notModified: false };
+      ? { url: result.url ?? null, etag: result.etag ?? null, notModified: result.notModified === true, missing: result.missing === true }
+      : { url: result, etag: null, notModified: false, missing: false };
   }
 
   return {
@@ -68,11 +83,12 @@ export function createAvatarCache(
       if (next === owner) return;
       owner = next;
       epoch++;
+      missing.clear();
       for (const key of entries.keys()) remove(key, true);
       notify();
     },
     subscribe(listener: (key?: string) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    invalidate(key: string) { remove(key); notify(key); },
+    invalidate(key: string) { missing.delete(key); remove(key); notify(key); },
     fail(key: string) { remove(key); entries.set(key, { value: null, etag: null, pending: null, refs: 0, retired: false, revoked: false }); notify(key); },
     retain(key: string, url: string | null): () => void {
       const entry = entries.get(key);
@@ -88,6 +104,7 @@ export function createAvatarCache(
       const entry = entries.get(key);
       if (!entry) return this.read(key);
       if (entry.pending) return entry.pending;
+      if (knownMissing(key)) return null;
       const captured = epoch;
       const pending = load(key, entry.etag).then(result => {
         const next = loaded(result);
@@ -97,6 +114,7 @@ export function createAvatarCache(
         }
         entry.pending = null;
         if (next.notModified) return entry.value;
+        remember(key, next);
         if (next.url === entry.value) { entry.etag = next.etag; return entry.value; }
         const replacement: Entry = { value: next.url, etag: next.etag, pending: null, refs: 0, retired: false, revoked: false };
         entries.set(key, replacement);
@@ -119,6 +137,7 @@ export function createAvatarCache(
         entries.set(key, existing);
         return existing.pending ?? existing.value;
       }
+      if (knownMissing(key)) return null;
       const captured = epoch;
       const entry: Entry = { value: null, etag: null, pending: null, refs: 0, retired: false, revoked: false };
       entries.set(key, entry);
@@ -132,6 +151,7 @@ export function createAvatarCache(
         entry.value = value;
         entry.etag = next.etag;
         entry.pending = null;
+        remember(key, next);
         scheduleSweep();
         return value;
       }).catch(() => {

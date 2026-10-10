@@ -178,7 +178,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     }
     [ObservableProperty] private string quoteFeedback = "";
     [ObservableProperty] private bool needAccount;
-    partial void OnNeedAccountChanged(bool value) { if (value) { MyCode = ""; resolvingInvites.Clear(); } }
+    partial void OnNeedAccountChanged(bool value) { if (value) { MyCode = ""; resolvingInvites.Clear(); } RaiseSignIn(); }
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string myCode = "";
     [ObservableProperty] private string messageSearch = "";
@@ -268,7 +268,13 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         SendCommand.NotifyCanExecuteChanged();
     }
 
-    public override Task ActivateAsync() => RefreshCoreAsync(background: false);
+    public override Task ActivateAsync() { RaiseSignIn(); return RefreshCoreAsync(background: false); }
+    /// <summary>Без входа (#18, D-02): понятное объяснение и кнопка «Войти» — только если вход реально работает.</summary>
+    public bool SignInWorks => App.Shared.AccountPanel.SignInWorks;
+    public bool ShowSignIn => NeedAccount && SignInWorks;
+    public string NeedAccountHint => SignInWorks ? "Личные чаты и чаты групп открываются после входа в аккаунт." : T("accountUnconfigured");
+    private void RaiseSignIn() { OnPropertyChanged(nameof(SignInWorks)); OnPropertyChanged(nameof(ShowSignIn)); OnPropertyChanged(nameof(NeedAccountHint)); }
+
 
     [RelayCommand]
     private Task RefreshAsync() => RefreshCoreAsync(background: false);
