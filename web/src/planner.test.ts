@@ -29,8 +29,10 @@ test("r2: the empty-day line ends with one period after Intl's « г.», and say
   const { endSentence, nextLessonsLine } = { endSentence: planner.endSentence, nextLessonsLine: planner.nextLessonsLine };
   const monday = new Date(2026, 9, 12);
   assert.ok(absoluteDate(monday).endsWith(" г."), absoluteDate(monday)); // Intl сам ставит точку после «г»
-  assert.equal(nextLessonsLine(monday), "Ближайшие пары — понедельник, 12 октября 2026 г.");
-  assert.doesNotMatch(nextLessonsLine(monday), /\.\.$/);
+  // G-3: формат глоссария — «Следующая пара: пн, 12 окт., 10:50», без двойной точки.
+  assert.equal(nextLessonsLine(monday, "10:50"), "Следующая пара: пн, 12 окт., 10:50");
+  assert.equal(nextLessonsLine(monday), "Следующая пара: пн, 12 окт.");
+  assert.doesNotMatch(nextLessonsLine(monday, "10:50"), /\.\.|Ближайшие/);
   assert.equal(nextLessonsLine(undefined), "В ближайшие три недели в сохранённом расписании пар нет.");
   assert.equal(endSentence("Готово"), "Готово.");
   assert.equal(endSentence("12 октября 2026 г."), "12 октября 2026 г.");

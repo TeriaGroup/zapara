@@ -75,9 +75,11 @@ export function dayOverviewText(lessons: readonly { timeStart: string; timeEnd: 
     return `${pairCount(lessons.length)} · ${lessons[0].timeStart}–${lessons[lessons.length - 1].timeEnd}`;
 }
 
-/** Строка пустого дня: когда ближайшие пары (глоссарий: «пары», не «занятия»). */
-export function nextLessonsLine(next?: Date | null) {
-    return next ? endSentence(`Ближайшие пары — ${absoluteDate(next)}`) : "В ближайшие три недели в сохранённом расписании пар нет.";
+/** G-3: дата в общем формате глоссария (web и desktop) — «пн, 12 окт.». */
+export function shortDate(date: Date) { return date.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short" }); }
+/** Строка пустого дня. G-3: как на desktop — «Следующая пара: пн, 12 окт., 10:50» (не «Ближайшие пары — …»). */
+export function nextLessonsLine(next?: Date | null, time?: string | null) {
+    return next ? `Следующая пара: ${shortDate(next)}${time ? `, ${time}` : ""}` : "В ближайшие три недели в сохранённом расписании пар нет.";
 }
 export function personalHomeworkDue(item: HomeworkItem, lessons: Lesson[], period: import("./types").Period, invert: boolean): Date | null {
     const created = item.legacyCreatedLocalDate ? localDay(item.legacyCreatedLocalDate) : new Date(item.created);
