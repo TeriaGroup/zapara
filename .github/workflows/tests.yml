@@ -365,7 +365,8 @@ jobs:
       # run only with DESIGN_OUT set and are excluded here.
       - name: JVM unit tests (:app:testGithubDebugUnitTest)
         working-directory: android
-        run: ./gradlew --no-daemon --max-workers=2 --console=plain :app:testGithubDebugUnitTest
+        # gradlew is committed without the executable bit.
+        run: bash ./gradlew --no-daemon --max-workers=2 --console=plain :app:testGithubDebugUnitTest
 
       - name: Upload test reports
         if: failure()
