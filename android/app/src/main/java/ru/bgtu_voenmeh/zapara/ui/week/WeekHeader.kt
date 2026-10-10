@@ -17,15 +17,16 @@ object WeekHeader {
         else "${first.dayOfMonth}$NBSP$m1 – ${last.dayOfMonth}$NBSP$m2"
     }
 
-    /** «5–11 окт. · чётная» — чётность строчными, после неразрывного пробела перед точкой-разделителем. */
+    /** «5–11 окт. · чётная» — чётность строчными; если не влезает, переносится «· чётная» целиком. */
     fun caption(range: String, parity: String): String =
-        if (range.isBlank()) parity.lowercase(Locale("ru")) else "$range$NBSP· ${parity.lowercase(Locale("ru"))}"
+        if (range.isBlank()) parity.lowercase(Locale("ru")) else "$range ·$NBSP${parity.lowercase(Locale("ru"))}"
 
     /**
      * «С++»/«C++» без разрыва между буквой и плюсами (word joiner), дефис внутри «ВЦ-3», «А-101» — неразрывный.
      * Текст на экране тот же, меняется только место переноса.
      */
     fun noBreak(text: String): String = text
-        .replace(Regex("([CСcс])\\+\\+")) { "${it.groupValues[1]}\u2060+\u2060+" }
+        // Латинская и кириллическая «С» (\u0421, \u0441) перед «++».
+        .replace(Regex("([Cc\u0421\u0441])\\+\\+")) { "${it.groupValues[1]}\u2060+\u2060+" }
         .replace(Regex("(?<=[\\p{L}\\d])-(?=[\\p{L}\\d])"), "\u2011")
 }

@@ -18,7 +18,7 @@ class WeekLayoutTest {
     }
 
     @Test fun caption_carries_parity_in_lower_case() {
-        assertEquals("5–11\u00A0окт.\u00A0· чётная", WeekHeader.caption("5–11\u00A0окт.", "Чётная"))
+        assertEquals("5–11\u00A0окт. ·\u00A0чётная", WeekHeader.caption("5–11\u00A0окт.", "Чётная"))
         assertEquals("нечётная", WeekHeader.caption("", "Нечётная"))
     }
 
