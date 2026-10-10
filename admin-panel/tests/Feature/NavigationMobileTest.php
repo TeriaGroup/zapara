@@ -75,4 +75,41 @@ class NavigationMobileTest extends TestCase
         $table = Livewire::test(ListAccountUsers::class)->instance()->getTable();
         $this->assertTrue($table->isStackedOnMobile());
     }
+
+    /**
+     * #26: на телефоне не ниже 44px не только кнопки, но и вкладки и поля (поиск, ввод, выбор, «на страницу»,
+     * сортировка). Замер в Chromium при 390 px — в PR; здесь — что правило есть в теме и попадает в блок телефона.
+     */
+    public function test_phone_theme_gives_tabs_and_fields_44px_targets(): void
+    {
+        $this->actingAs($this->makeUser(true));
+        $html = $this->get('/admin/settings')->assertOk()->getContent();
+        $phone = $this->phoneBlocks((string) $html);
+
+        $this->assertMatchesRegularExpression('/\.fi-tabs-item,\s*\.fi-input-wrp\s*\{\s*min-height:\s*44px;/', $phone);
+        $this->assertMatchesRegularExpression('/\.fi-input-wrp \.fi-input,\s*\.fi-input-wrp \.fi-select-input\s*\{\s*min-height:\s*44px;/', $phone);
+    }
+
+    /** Склеенное содержимое блоков «@media (max-width: 767px)» из темы панели. */
+    private function phoneBlocks(string $html): string
+    {
+        $css = (string) preg_replace('~/\*.*?\*/~s', '', $html);
+        $out = '';
+        $offset = 0;
+        while (($at = strpos($css, '@media (max-width: 767px)', $offset)) !== false) {
+            $open = strpos($css, '{', $at);
+            $depth = 0;
+            for ($i = $open; $i < strlen($css); $i++) {
+                $depth += $css[$i] === '{' ? 1 : ($css[$i] === '}' ? -1 : 0);
+                if ($depth === 0) {
+                    break;
+                }
+            }
+            $out .= substr($css, $open + 1, $i - $open - 1);
+            $offset = $i;
+        }
+        $this->assertNotSame('', $out, 'phone media block');
+
+        return $out;
+    }
 }
