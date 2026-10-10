@@ -19,6 +19,14 @@ class HomeworkDensityTest {
         assertFalse(HomeworkDensity.fullError(null, 0, 0))
     }
 
+    @Test fun empty_list_shows_only_the_empty_state() {
+        assertTrue(HomeworkDensity.nothingYet(null, 0, 0, false))
+        assertFalse(HomeworkDensity.nothingYet(null, 1, 0, false))
+        assertFalse("общие ещё грузятся", HomeworkDensity.nothingYet(null, 0, 0, true))
+        assertFalse("ошибка — другой экран", HomeworkDensity.nothingYet("x", 0, 0, false))
+        assertTrue(section.contains("if (!nothingYet) item(\"browse\")") && section.contains("if (!nothingYet) item(\"summary\")"))
+    }
+
     @Test fun found_count_only_when_the_list_is_narrowed() {
         assertFalse(HomeworkDensity.filtered("", HomeworkCompletionFilter.Active, false, null))
         assertTrue(HomeworkDensity.filtered("физ", HomeworkCompletionFilter.Active, false, null))

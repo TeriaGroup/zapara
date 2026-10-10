@@ -100,10 +100,12 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
     // #101 / AN-10: ошибка без сохранённых заданий — полноценное состояние ошибки, без фильтров и счётчиков.
     val fullError = HomeworkDensity.fullError(state.loadError, state.groups.sumOf { it.items.size }, state.sharedRows.size)
     val openCount = browse.totalActive + state.sharedRows.count { !it.completed }
+    // #101 / AN-20: заданий нет совсем — только пустое состояние, без поиска, фильтров, счётчиков и «⋯».
+    val nothingYet = HomeworkDensity.nothingYet(state.loadError, state.groups.sumOf { it.items.size }, state.sharedRows.size, state.sharedLoading)
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_homework)) {
             if (state.hasGroup) ZIconButton(R.drawable.ic_plus, stringResource(R.string.add), { onEvent(HomeworkEvent.Add) }, "Homework.Add")
-            if (state.hasGroup && state.loaded && !fullError) Box {
+            if (state.hasGroup && state.loaded && !fullError && !nothingYet) Box {
                 ZIconButton(R.drawable.ic_ellipsis, stringResource(R.string.hw_more), { menuOpen = true }, "Homework.More")
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text(stringResource(if (planToolsOpen) R.string.ux300_visual_homework_close
@@ -153,7 +155,7 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
                         ZButton(stringResource(R.string.repeat), { onEvent(HomeworkEvent.RetryLoad) }, ghost = true)
                     }
                 } }
-                item("browse") {
+                if (!nothingYet) item("browse") {
                     Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         if (planToolsOpen) HomeworkSubjectOverview(state.groups.flatMap { it.items }, "${state.profileName}:${state.groupId}") { key ->
                             selectedSubject = key
@@ -256,7 +258,7 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
                         }
                     }
                 }
-                item("summary") {
+                if (!nothingYet) item("summary") {
                     Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     // #101: одна строка счётчиков; «Найдено» — только когда что-то отфильтровано.
                     val doneCount = browse.totalDone + state.sharedRows.count { it.completed }

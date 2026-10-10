@@ -16,6 +16,10 @@ object HomeworkDensity {
     /** Ошибка загрузки и показать нечего — экран ошибки вместо фильтров и счётчиков (AN-10). */
     fun fullError(loadError: String?, personal: Int, shared: Int): Boolean = loadError != null && personal + shared == 0
 
+    /** Заданий нет совсем (и не грузятся): показываем только «Домашки нет» с «Добавить задание». */
+    fun nothingYet(loadError: String?, personal: Int, shared: Int, sharedLoading: Boolean): Boolean =
+        loadError == null && personal + shared == 0 && !sharedLoading
+
     /** «Найдено N» нужно, только когда список чем-то сужен: поиск, не «Активные», доп. фильтры, предмет. */
     fun filtered(query: String, completion: HomeworkCompletionFilter, advancedActive: Boolean, subject: String?): Boolean =
         query.isNotBlank() || completion != HomeworkCompletionFilter.Active || advancedActive || subject != null

@@ -96,6 +96,7 @@ class HomeworkSectionTest {
         checkLabels("Сдано")
         Frames.capture(rule.activity, "task3-done-$label-200")
         rule.onNodeWithTag("Homework.Row.7").performClick()
+        rule.onNodeWithTag("Homework.Edit.7").performClick() // #101: карточка открывает лист задания
         rule.onNodeWithTag("Editor.Due", true).assertTextEquals("Срок: 11.09 (Пт)")
         noOverflow("Editor.Due")
         Frames.capture(rule.activity, "task3-editor-$label-200")
@@ -111,6 +112,7 @@ class HomeworkSectionTest {
         rule.onNodeWithTag("Editor.Cancel").performClick()
         rule.runOnIdle { assertEquals(0, saves) }
         rule.onNodeWithTag("Homework.Row.7").performClick()
+        rule.onNodeWithTag("Homework.Edit.7").performClick() // #101: карточка открывает лист задания
         rule.onNodeWithTag("Editor.Due", true).assertTextEquals("Срок: 11.09 (Пт)")
         rule.onNodeWithTag("Editor.Save").assertHeightIsAtLeast(48.dp).performClick()
         rule.runOnIdle { assertEquals(1, saves); assertEquals(due, stored.due) }
@@ -236,9 +238,9 @@ class HomeworkSectionTest {
                 }
             }
         }
-        // Intentional new discoverable icon/action; the pre-existing card tap is not enough.
-        val edit = rule.onNodeWithTag("Homework.Edit.8").performScrollTo().assertIsDisplayed()
-            .assertContentDescriptionEquals("Редактировать: История, Второе задание")
+        // #101: «Изменить» — первое действие листа задания, который открывает нажатие на карточку.
+        rule.onNodeWithTag("Homework.Row.8").performScrollTo().performClick()
+        val edit = rule.onNodeWithTag("Homework.Edit.8").assertIsDisplayed()
         val bounds = edit.fetchSemanticsNode().boundsInRoot
         assertTrue("Edit actual 48dp target", bounds.width + 0.5f >= 48 * rule.density.density &&
             bounds.height + 0.5f >= 48 * rule.density.density)
