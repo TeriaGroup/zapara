@@ -14,6 +14,21 @@ object MapFocus {
     const val MIN_ZOOM = 1.5f
     const val MAX_ZOOM = 2.5f
 
+    /**
+     * Автозум — один раз на открытие карты для одной и той же аудитории. Повторные загрузки в режиме пары
+     * (обновление расписания, повтор загрузки плана) не сбрасывают ручной масштаб. Другая аудитория или
+     * этаж — снова приближаем.
+     */
+    class Once {
+        private var last: String? = null
+        fun take(building: String, floor: Int, room: String?): Boolean {
+            val key = "$building|$floor|${room.orEmpty()}"
+            if (key == last) return false
+            last = key
+            return true
+        }
+    }
+
     data class Focus(val zoom: Float, val panX: Float, val panY: Float)
 
     /**

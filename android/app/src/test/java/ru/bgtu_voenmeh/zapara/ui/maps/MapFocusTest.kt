@@ -69,4 +69,16 @@ class MapFocusTest {
         if (web.exists()) assertTrue("web: autoZoomNextRoom = false",
             web.readText().contains("export const autoZoomNextRoom = false;"))
     }
+
+    @Test fun lesson_room_is_zoomed_once_per_map_open_so_a_manual_zoom_survives_reloads() {
+        val once = MapFocus.Once()
+        assertTrue("первое открытие — приближаем", once.take("ГК", 2, "229"))
+        assertFalse("перезагрузка той же аудитории — ручной масштаб не трогаем", once.take("ГК", 2, "229"))
+        assertFalse(once.take("ГК", 2, "229"))
+        assertTrue("другая аудитория — снова приближаем", once.take("ГК", 2, "231"))
+        assertTrue("другой этаж", once.take("ГК", 3, "231"))
+        val vm = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/MapsViewModel.kt").readText()
+        assertTrue(vm.contains("private val focusOnce = MapFocus.Once()"))
+        assertTrue(vm.contains("MapFocus.applies(mode, selected != null, coords) && focusOnce.take(shown, level, room)"))
+    }
 }

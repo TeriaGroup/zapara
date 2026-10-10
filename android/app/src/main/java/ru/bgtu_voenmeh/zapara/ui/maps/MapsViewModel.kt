@@ -48,6 +48,7 @@ class MapsViewModel internal constructor(
     private var pickerEpoch = 0L
     private val routeMemory = RouteSessionMemory()
     private val recentPlaceIds = RecentPlaceIds()
+    private val focusOnce = MapFocus.Once()
 
     init {
         launchMap {
@@ -347,7 +348,8 @@ class MapsViewModel internal constructor(
         mapLoads.ensureCurrent()
         floorRooms = rooms
         // #103 / AN-03: аудитория пары — в центре и крупнее; ручные жесты и «Весь план» работают как раньше.
-        val focus = if (MapFocus.applies(mode, selected != null, coords)) MapFocus.focus(coords!!) else null
+        val focus = if (MapFocus.applies(mode, selected != null, coords) && focusOnce.take(shown, level, room))
+            MapFocus.focus(coords!!) else null
         mutable.update {
             val routed = it.withRoute(shown).copy(activeStepId = it.activeStepId)
             val chosen = selectedId?.let { id -> RouteNavigation.select(routed, id) } ?: routed
