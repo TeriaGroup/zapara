@@ -23,7 +23,7 @@ enum class Section(
     Teachers("teachers", R.string.nav_teachers, R.drawable.ic_teachers, "Sections.Teachers", false),
     Friends("friends", R.string.nav_friends, R.drawable.ic_friends, "Sections.Friends", false),
     Community("community", R.string.nav_community, R.drawable.ic_community, "Sections.Community", false),
-    Group("group", R.string.nav_group, R.drawable.ic_chat, "Sections.Group", false),
+    Group("group", R.string.nav_group, R.drawable.ic_users, "Sections.Group", false), // #108 / AN-18: свой значок, не как у «Чатов»
     Settings("settings", R.string.nav_settings, R.drawable.ic_settings, "Sections.Settings", false);
 
     val pattern: String get() = when (this) {
