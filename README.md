@@ -153,6 +153,14 @@ dotnet run --project src\Vograph.Desktop.UiVerify -- --exe <путь>\publish\Vo
 
 Android:
 
+Нужен JDK 17. Путь к нему в репозитории не задан: Gradle берёт JDK из `JAVA_HOME` (или `java` в `PATH`). Если основной JDK другой, путь к JDK 17 задают только у себя, в `~/.gradle/gradle.properties` (Windows: `%USERPROFILE%\.gradle\gradle.properties`):
+
+```properties
+org.gradle.java.home=C:/Android/jdk17
+```
+
+`android/local.properties` для этого не подходит: оттуда читается только `sdk.dir`, а `org.gradle.java.home` Gradle берёт из `gradle.properties`. `android/scripts/verify.ps1` передаёт найденный JDK сам (`-Dorg.gradle.java.home`, см. `android/scripts/README.md`).
+
 ```powershell
 cd android
 .\gradlew.bat :app:assembleGithubDebug
