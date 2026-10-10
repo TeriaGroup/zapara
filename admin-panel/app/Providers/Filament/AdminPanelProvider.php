@@ -7,6 +7,8 @@ use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use App\Filament\Pages\Login;
+use App\Filament\Pages\Security;
+use App\Auth\ThrottledAppAuthentication;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use App\Filament\Navigation\AdminNavigation;
@@ -33,6 +35,19 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login(Login::class)
+            ->profile(Security::class, isSimple: false)
+            // TOTP (RFC 6238) with one-time recovery codes. Enforcement is a deploy switch, see admin-panel/README.md.
+            // codeWindow(1): the current 30-second step and one on each side (Filament's default accepts ±4 minutes).
+            // Wrong codes are limited per admin (App\Auth\MfaThrottle); an accepted code cannot be reused.
+            ->multiFactorAuthentication(
+                [
+                    ThrottledAppAuthentication::make()
+                        ->brandName('Расписание военмех')
+                        ->codeWindow(1)
+                        ->recoverable(),
+                ],
+                isRequired: fn (): bool => (bool) config('zapara.admin_mfa_required'),
+            )
             ->brandName('Расписание военмех')
             // Цвета из общих дизайн-токенов (#11): config/design-tokens.php генерирует scripts/design/tokens.mjs.
             ->colors(array_map(

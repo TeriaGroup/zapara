@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Auth\AccountUserProvider;
+use App\Auth\ZaparaHasher;
 use App\Support\Zapara;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,6 +32,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->app->setLocale('ru');
+        // Account passwords are ASP.NET Identity hashes; see ZaparaHasher (needed by Filament's password confirmation).
+        Hash::extend('zapara', fn ($app) => new ZaparaHasher($app['hash']->createBcryptDriver()));
+        config(['hashing.driver' => 'zapara']);
         Auth::provider('accounts', function ($app, array $config) {
             return new AccountUserProvider($app['hash'], $config['model']);
         });

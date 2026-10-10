@@ -95,7 +95,9 @@ return [
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            'search_path' => 'public',
+            // Schema for the panel's own tables (migrations, cache, jobs, sessions, admin_mfa_credentials).
+            // The server's schemas (accounts, communities, operator, ...) are always addressed by name.
+            'search_path' => env('DB_SCHEMA', 'public'),
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 

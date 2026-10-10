@@ -29,3 +29,7 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
 
 USER www-data
 EXPOSE 8080
+
+# Runs pending migrations (idempotent) as www-data before Apache starts; see docker/entrypoint.sh.
+ENTRYPOINT ["/var/www/html/docker/entrypoint.sh"]
+CMD ["apache2-foreground"]
