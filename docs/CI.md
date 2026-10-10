@@ -68,7 +68,7 @@ SDK и интерпретаторы ставят сами задания: `actio
 - `sudo` без пароля для пользователя раннера: setup-php ставит PHP и расширения через `apt`;
 - Docker Engine, пользователь раннера в группе `docker`; образ `postgres:16-alpine` скачивается при первом запуске;
 - `git`, `curl`, `openssl`, `tar`, `xz-utils`, `unzip`;
-- библиотеки для .NET и Avalonia headless: `libicu`, `libssl`, `libfontconfig1`;
+- библиотеки для .NET и Avalonia headless: `libicu`, `libssl`, `libfontconfig1` (если `libfontconfig1` нет, задание `desktop` ставит его само через `sudo apt-get`);
 - свободные порты `127.0.0.1:56432` и `127.0.0.1:56543`.
 
 Раннер постоянный, поэтому каждое задание в конце (`if: always()`) удаляет свой контейнер вместе с томом
@@ -76,6 +76,8 @@ SDK и интерпретаторы ставят сами задания: `actio
 Контейнеры помечены `zapara-ci=1` и названы `zapara-ci-pg-<run_id>-<attempt>-<job>`; если задание убито вместе с раннером,
 остатки можно найти командой `docker ps -a --filter label=zapara-ci=1`. Данные PostgreSQL лежат в tmpfs и на диск не попадают.
 Кэши пакетов (`~/.nuget/packages`, кэш npm и Composer) остаются между запусками; секретов в них нет.
+
+Задание `web` идёт с `TZ=Europe/Moscow`: тесты форматирования времени ждут московское время, а часы раннера в UTC.
 
 ## После слияния PR #2
 

@@ -162,6 +162,9 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
+    env:
+      # Date/time tests format times in the users' zone (Moscow), the runner's clock is UTC.
+      TZ: Europe/Moscow
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -234,6 +237,15 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+
+      # libSkiaSharp (Avalonia headless rendering) needs libfontconfig.so.1. Installed only when missing,
+      # with the same passwordless sudo/apt that setup-php uses on this runner (docs/CI.md).
+      - name: Native libraries for Avalonia headless
+        run: |
+          if ! ldconfig -p | grep -q 'libfontconfig\.so\.1'; then
+            sudo -n apt-get update -q
+            sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends libfontconfig1
+          fi
 
       - name: Client library tests
         run: |
