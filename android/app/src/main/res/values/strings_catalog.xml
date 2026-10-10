@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Сгенерировано scripts/design/strings.mjs из design/strings/ru.json — не править вручную. -->
+<resources>
+    <string name="ux100_common_public_name">Расписание военмех</string> <!-- productName -->
+    <string name="settings_about_title">Расписание военмех</string> <!-- productName -->
+    <string name="nav_schedule">Расписание</string> <!-- scheduleTitle -->
+    <string name="notification_odd">нечётная</string> <!-- parityOdd -->
+    <string name="notification_even">чётная</string> <!-- parityEven -->
+    <string name="week_odd">Нечётная</string> <!-- parityOddTitle -->
+    <string name="teacher_filter_odd">Нечётная</string> <!-- parityOddTitle -->
+    <string name="week_even">Чётная</string> <!-- parityEvenTitle -->
+    <string name="teacher_filter_even">Чётная</string> <!-- parityEvenTitle -->
+    <string name="chip_odd">нечёт.</string> <!-- parityOddShort -->
+    <string name="chip_even">чёт.</string> <!-- parityEvenShort -->
+    <string name="schedule_lesson_action_map">Карта</string> <!-- openMap -->
+    <string name="ux100_study_deadline_none">Без срока</string> <!-- noDeadline -->
+    <string name="ux300_android_no_deadline">Без срока</string> <!-- noDeadline -->
+    <string name="uxnext_homework_no_deadline">Без срока</string> <!-- noDeadline -->
+    <string name="ux300_group_obligations_undated">Без срока</string> <!-- noDeadline -->
+    <string name="maps_floor_label">Этаж</string> <!-- floor -->
+    <string name="type_chip_lecture">Лекция</string> <!-- typeLecture -->
+    <string name="type_chip_practice">Практика</string> <!-- typePractice -->
+    <string name="type_chip_credit">Зачёт</string> <!-- typeCredit -->
+    <string name="type_chip_exam">Экзамен</string> <!-- typeExam -->
+    <string name="type_chip_course">Курсовая</string> <!-- typeCourse -->
+</resources>

@@ -2,7 +2,7 @@
 <resources>
     <string name="homework_browse_search">Поиск по предмету или заданию</string>
     <string name="homework_browse_active">Активные</string>
-    <string name="homework_browse_done">Готово у меня</string>
+    <string name="homework_browse_done">Выполнено</string>
     <string name="homework_browse_all">Все</string>
     <string name="homework_browse_no_results">Ничего не найдено</string>
     <string name="homework_browse_no_results_hint">Попробуйте другой запрос или покажите все задания.</string>

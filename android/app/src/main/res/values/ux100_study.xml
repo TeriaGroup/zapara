@@ -4,7 +4,6 @@
     <string name="ux100_study_deadline_overdue">Просрочено</string>
     <string name="ux100_study_deadline_urgent">Срочно</string>
     <string name="ux100_study_deadline_soon">Скоро</string>
-    <string name="ux100_study_deadline_none">Без срока</string>
     <string name="ux100_study_origin_all">Все задания</string>
     <string name="ux100_study_origin_personal">Личные</string>
     <string name="ux100_study_origin_shared">Общие</string>

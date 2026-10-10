@@ -10,14 +10,14 @@
     <string name="ux300_agenda_lesson_changed">Пара изменилась. Откройте обзор заново.</string>
     <string name="ux300_agenda_room">Занятость аудитории</string>
     <string name="ux300_agenda_changes">Изменения расписания и подгруппы</string>
-    <string name="ux300_room_scope">Занятия известных этому устройству групп. Отсутствие занятий в списке не означает, что аудитория свободна.</string>
+    <string name="ux300_room_scope">Пары известных этому устройству групп. Отсутствие пар в списке не означает, что аудитория свободна.</string>
     <string name="ux300_room_coverage">Сохранено групп: %1$d · Не сопоставлено аудиторий: %2$d</string>
     <string name="ux300_room_loading">Читаем сохранённые данные…</string>
     <string name="ux300_room_search">Поиск аудитории</string>
     <string name="ux300_room_missing">Аудитория больше не найдена в графе</string>
     <string name="ux300_room_choose">Выбрать другую аудиторию</string>
     <string name="ux300_room_unknown">До начала периода данные неизвестны.</string>
-    <string name="ux300_room_empty">В сохранённых копиях занятия не найдены.</string>
+    <string name="ux300_room_empty">В сохранённых копиях пары не найдены.</string>
     <string name="ux300_room_map">Показать на карте</string>
     <string name="ux300_refresh_scope">Одна фактическая неделя до и после успешного обновления или выбора подгруппы, пока этот экран открыт. При смене аккаунта, группы, периода или недели сравнение сбрасывается. История после перезапуска не сохраняется.</string>
     <string name="ux300_refresh_none">Обновление этой недели ещё не наблюдалось. Оставьте неделю открытой и обновите расписание в настройках.</string>
@@ -51,7 +51,6 @@
     <string name="ux300_group_obligations_failed">Обзор не загружен. Попробуйте ещё раз.</string>
     <string name="ux300_group_obligations_coverage">Загружено тем: %1$d из %2$d · Ошибок: %3$d · Не включено: %4$d</string>
     <string name="ux300_group_obligations_empty">В выбранном режиме загруженные дела не найдены.</string>
-    <string name="ux300_group_obligations_undated">Без срока</string>
     <string name="ux300_group_obligations_open">Открыть выбранное дело</string>
     <string name="ux300_group_obligations_unread">Непрочитанные темы</string>
     <string name="ux300_group_obligations_show_channel">Показано выбранное дело · Вся тема</string>

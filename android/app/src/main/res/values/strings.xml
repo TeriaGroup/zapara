@@ -1,9 +1,7 @@
 <resources>
     <string name="notification_channel">Расписание</string>
     <string name="notification_homework_mark">[ДЗ!]</string>
-    <string name="notification_odd">нечетная</string>
-    <string name="notification_even">четная</string>
-    <string name="notification_no_lessons">Нет занятий</string>
+    <string name="notification_no_lessons">Нет пар</string>
     <string name="notification_title">Военмех - расписание и карты</string>
     <string name="theme_system">Системная</string>
     <string name="theme_light">Светлая</string>
@@ -21,7 +19,6 @@
     <string name="theme_icons">Иконки разделов и действий</string>
     <string name="theme_icon_index">Иконка %1$d</string>
     <string name="theme_saved">Сохранено</string>
-    <string name="nav_schedule">Расписание</string>
     <string name="nav_maps">Карты</string>
     <string name="nav_homework">Домашка</string>
     <string name="nav_sections">Разделы</string>
@@ -44,8 +41,6 @@
     <string name="empty_no_group_hint">Выберите группу, чтобы открыть расписание</string>
     <string name="homework_empty">Нет домашних заданий</string>
     <string name="maps_choose">Выбрать корпус</string>
-    <string name="week_odd">Нечётная</string>
-    <string name="week_even">Чётная</string>
     <string name="toast_group">Группа: %1$s</string>
     <string name="today">Сегодня</string>
     <string name="yesterday">Вчера</string>
@@ -67,7 +62,7 @@
     <string name="scope_everywhere">Везде</string>
     <string name="scope_day_only">Только %1$s</string>
     <string name="reset">Сбросить</string>
-    <string name="hw_done">сдано</string>
+    <string name="hw_done">выполнено</string>
     <string name="hw_status_done">Сдано</string>
     <string name="hw_status_overdue">Просрочено</string>
     <string name="hw_status_urgent">Горит сегодня</string>
@@ -111,7 +106,7 @@
     <string name="map_ctx_next_min">Следующая пара · %1$s · через %2$d мин</string>
     <string name="map_ctx_next_tomorrow">Следующая пара · завтра %1$s · %2$s</string>
     <string name="map_ctx_next_date">Следующая пара · %1$s %2$s · %3$s</string>
-    <string name="map_ctx_none">Нет предстоящих занятий</string>
+    <string name="map_ctx_none">Нет предстоящих пар</string>
     <string name="maps_vc_note">ВЦ показан на плане ГК</string>
     <string name="maps_zoom_in">Приблизить</string>
     <string name="maps_zoom_out">Отдалить</string>
@@ -156,8 +151,6 @@
     <string name="teachers_found">Найдено %1$d из %2$d</string>
     <string name="teachers_back">Назад</string>
     <string name="parity_both">Обе</string>
-    <string name="teacher_filter_odd">Нечётная</string>
-    <string name="teacher_filter_even">Чётная</string>
     <string name="teacher_parity_both">Обе недели</string>
     <string name="teacher_parity_odd">Нечётная неделя</string>
     <string name="teacher_parity_even">Чётная неделя</string>
@@ -213,7 +206,6 @@
     <string name="settings_rustore">Стабильные обновления приходят через RuStore. Эту сборку нельзя обновлять с GitHub — так устроены правила магазина.</string>
     <string name="settings_rustore_early">Ранние версии и последние сборки можно найти на нашем GitHub, чтобы всегда быть в курсе.</string>
     <string name="settings_rustore_github">Открыть GitHub</string>
-    <string name="settings_about_title">Расписание военмех</string>
     <string name="settings_report">Сообщить о баге</string>
     <string name="settings_report_hint">Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ.</string>
     <string name="settings_version">Версия %1$s</string>
@@ -242,13 +234,8 @@
     <string name="type_credit">зачёт</string>
     <string name="type_exam">экзамен</string>
     <string name="type_course">курсовая</string>
-    <string name="type_chip_lecture">Лекция</string>
-    <string name="type_chip_practice">Практика</string>
     <string name="type_chip_lab">Лаба</string>
     <string name="type_chip_consult">Консульт.</string>
-    <string name="type_chip_credit">Зачёт</string>
-    <string name="type_chip_exam">Экзамен</string>
-    <string name="type_chip_course">Курсовая</string>
     <string name="remote_room">дистанционно</string>
     <string name="parity_week_odd">нечётная неделя</string>
     <string name="parity_week_even">чётная неделя</string>
@@ -266,20 +253,18 @@
     <string name="day_many">дней</string>
     <string name="time_hhmm">Время в формате ЧЧ:ММ</string>
     <string name="maps_remote_line">Пара дистанционная, план не нужен</string>
-    <string name="chip_odd">нечёт.</string>
-    <string name="chip_even">чёт.</string>
     <string name="chip_group">%1$s · %2$s</string>
     <string name="settings_upd_available">Доступна %1$s</string>
     <string name="settings_upd_current">Актуальная версия %1$s</string>
     <string name="settings_upd_current_at">Актуальная версия %1$s · проверено %2$s</string>
-    <string name="upd_log_request">Запрос к GitHub...</string>
+    <string name="upd_log_request">Запрос к GitHub…</string>
     <string name="upd_log_none">Новее нет</string>
     <string name="upd_log_found">Найдено %1$s</string>
     <string name="upd_err_403">GitHub ограничил запросы с вашей сети (VPN делит лимит). Попробуйте позже</string>
     <string name="upd_err">Ошибка: %1$s</string>
     <string name="upd_log_fail">Проверка не удалась</string>
-    <string name="upd_log_connect">Соединение...</string>
-    <string name="upd_log_dl">Качаю...</string>
+    <string name="upd_log_connect">Соединение…</string>
+    <string name="upd_log_dl">Качаю…</string>
     <string name="upd_log_done">Скачано</string>
     <string name="upd_err_dl">Скачивание: %1$s</string>
     <string name="upd_log_dl_fail">Скачивание не удалось</string>
@@ -324,8 +309,8 @@
     <string name="settings_source_university">Сайт университета</string>
     <string name="settings_source_hint">Сайт университета — явный запасной источник, не включается сам.</string>
     <string name="settings_api_unconfigured">Адрес API расписания не задан в локальной конфигурации.</string>
-    <string name="hw_due_decrease">Уменьшить число занятий до срока</string>
-    <string name="hw_due_increase">Увеличить число занятий до срока</string>
+    <string name="hw_due_decrease">Уменьшить число пар до срока</string>
+    <string name="hw_due_increase">Увеличить число пар до срока</string>
     <string name="friends_enabled_label">Показывать группу %1$s</string>
     <string name="friend_color_orange">Оранжевый</string>
     <string name="friend_color_green">Зелёный</string>
@@ -410,7 +395,7 @@
     <string name="group_homework_due">Срок: %1$s</string>
     <string name="group_homework_selected">Получатели: выбранные подгруппы и участники</string>
     <string name="group_homework_all">Получатели: вся группа</string>
-    <string name="group_homework_my_done">Готово у меня</string>
+    <string name="group_homework_my_done">Выполнено</string>
     <string name="group_homework_active_filter">Активные · %1$d</string>
     <string name="group_homework_done_filter">Выполненные · %1$d</string>
     <string name="group_homework_filter_empty">Заданий в этом разделе пока нет.</string>
@@ -436,9 +421,9 @@
     <string name="homework_share_retry_failed">Не удалось подтвердить публикацию. Проверьте домашку группы перед повтором.</string>
     <string name="homework_completion_conflict">Отметка изменилась на другом устройстве. Повторите действие.</string>
     <string name="schedule_homework_shared_context">Общее задание · получатели: %1$s</string>
-    <string name="schedule_homework_my_done">Готово у меня: %1$s</string>
+    <string name="schedule_homework_my_done">Выполнено: %1$s</string>
     <string name="schedule_homework_yes">да</string>
     <string name="schedule_homework_no">нет</string>
     <string name="schedule_homework_personal">Личное задание</string>
-    <string name="schedule_homework_shared_row">Общее задание · %1$s · готово у меня</string>
+    <string name="schedule_homework_shared_row">Общее задание · %1$s · выполнено</string>
 </resources>

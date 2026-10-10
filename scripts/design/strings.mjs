@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Общий каталог строк (#12): design/strings/ru.json → web/src/strings.gen.ts и Vograph.Core/Services/SharedStrings.g.cs.
+// Общий каталог строк (#12): design/strings/ru.json → web/src/strings.gen.ts, Vograph.Core/Services/SharedStrings.g.cs
+// и android/app/src/main/res/values/strings_catalog.xml (ключи "android" у строки — имена ресурсов Android).
 // Запуск: node scripts/design/strings.mjs        — перегенерировать
 //         node scripts/design/strings.mjs --check — упасть, если файлы устарели
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -68,10 +69,36 @@ ${dict(Object.entries(catalog.yo))}
 }
 `;
 
-const outputs = [["web/src/strings.gen.ts", webFile], ["src/Vograph.Core/Services/SharedStrings.g.cs", csFile]];
+// Android: {0} → %1$s, экранирование aapt (\' \" & <). Имя ресурса задаётся только здесь —
+// если оно осталось в другом файле values/, сборка упала бы на дубликате, поэтому генератор падает раньше.
+const androidDir = "android/app/src/main/res/values";
+const androidCatalog = "strings_catalog.xml";
+const android = [];
+for (const [key, value] of Object.entries(catalog.strings)) for (const name of value.android ?? []) android.push([name, value.ru, key]);
+const androidText = value => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/'/g, "\\'").replace(/"/g, '\\"')
+  .replace(/^([@?])/, "\\$1").replace(/\{(\d+)\}/g, (_, index) => `%${Number(index) + 1}$s`);
+export const androidFile = `<?xml version="1.0" encoding="utf-8"?>
+<!-- ${header} -->
+<resources>
+${android.map(([name, value, key]) => `    <string name="${name}">${androidText(value)}</string> <!-- ${key} -->`).join("\n")}
+</resources>
+`;
+export function androidDuplicates(dir = join(root, androidDir)) {
+  const names = new Set(android.map(([name]) => name));
+  const found = [];
+  let files = [];
+  try { files = readdirSync(dir).filter(file => file.endsWith(".xml") && file !== androidCatalog); } catch { return found; }
+  for (const file of files) for (const match of readFileSync(join(dir, file), "utf8").matchAll(/<string\s+name="([^"]+)"/g))
+    if (names.has(match[1])) found.push(`${file}: ${match[1]}`);
+  return found;
+}
+
+const outputs = [["web/src/strings.gen.ts", webFile], ["src/Vograph.Core/Services/SharedStrings.g.cs", csFile], [`${androidDir}/${androidCatalog}`, androidFile]];
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const check = process.argv.includes("--check");
   let stale = false;
+  const duplicates = androidDuplicates();
+  if (duplicates.length) { console.error(`строки Android из каталога заданы ещё и вручную (удалите их там):\n  ${duplicates.join("\n  ")}`); process.exit(1); }
   for (const [path, text] of outputs) {
     const full = join(root, path);
     let current = "";

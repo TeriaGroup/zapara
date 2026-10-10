@@ -8,7 +8,7 @@
     <string name="ux300_ext_unpin">Открепить</string>
     <string name="ux300_ext_summary_search">Найти в сводке</string>
     <string name="ux300_ext_summary_matches">Найдено: %1$d из %2$d</string>
-    <string name="ux300_ext_summary_slots">Показать занятия</string>
+    <string name="ux300_ext_summary_slots">Показать пары</string>
     <string name="ux300_ext_keep_awake">Не гасить экран</string>
     <string name="ux300_ext_allow_sleep">Разрешить выключение экрана</string>
     <string name="ux300_ext_device_details">Подробности сеанса</string>
@@ -16,8 +16,8 @@
     <string name="ux300_ext_device_seen">Последняя активность: %1$s</string>
     <string name="ux300_ext_device_expires">Срок сеанса: %1$s</string>
     <string name="ux300_ext_explain_due">Как получился срок</string>
-    <string name="ux300_ext_due_explanation">Даты для числа следующих занятий по текущим правилам расчёта. Неизменённое задание сохраняет прежний срок.</string>
-    <string name="ux300_ext_due_occurrence">%1$d-е занятие: %2$s</string>
+    <string name="ux300_ext_due_explanation">Даты для числа следующих пар по текущим правилам расчёта. Неизменённое задание сохраняет прежний срок.</string>
+    <string name="ux300_ext_due_occurrence">%1$d-я пара: %2$s</string>
     <string name="ux300_ext_due_unknown">дата пока неизвестна</string>
     <string name="ux300_ext_remaining_only">Оставшиеся сегодня</string>
     <string name="ux300_ext_all_day">Показать весь день</string>
@@ -48,9 +48,9 @@
     <string name="ux300_ext_pending_more">Ещё изменений: %1$d. Показаны первые 50.</string>
     <string name="ux300_ext_pending_refresh">Обновить список изменений</string>
     <string name="ux300_ext_postpone">Перенести на следующую по счёту пару</string>
-    <string name="ux300_ext_postpone_hint">Число занятий от даты создания увеличится на один. Проверьте новые даты: у старого задания срок может остаться в прошлом. Вложения сохраняются. Повтор применится только к неудавшимся строкам.</string>
+    <string name="ux300_ext_postpone_hint">Число пар от даты создания увеличится на один. Проверьте новые даты: у старого задания срок может остаться в прошлом. Вложения сохраняются. Повтор применится только к неудавшимся строкам.</string>
     <string name="ux300_ext_postpone_ready">Готово к переносу</string>
-    <string name="ux300_ext_postpone_skipped">Пропущено: достигнут предел 10 занятий либо следующая дата не определена.</string>
+    <string name="ux300_ext_postpone_skipped">Пропущено: достигнут предел 10 пар либо следующая дата не определена.</string>
     <string name="ux300_ext_postpone_failed">Не перенесено: данные изменились или не удалось сохранить. Можно повторить.</string>
     <string name="ux300_ext_postpone_applied">Срок перенесён</string>
     <string name="ux300_ext_postpone_restored">Прежний срок восстановлен</string>
@@ -70,7 +70,7 @@
     <string name="ux300_ext_close">Закрыть</string>
     <string name="ux300_ext_compare_weeks">Сравнить с другой неделей</string>
     <string name="ux300_ext_week_comparison_hint">Сравнение двух выбранных недель по текущей сохранённой копии, с учётом вашей подгруппы. Это не история изменений расписания.</string>
-    <string name="ux300_ext_week_same">Набор занятий совпадает</string>
+    <string name="ux300_ext_week_same">Набор пар совпадает</string>
     <string name="ux300_ext_week_removed">Только %1$s: %2$s</string>
     <string name="ux300_ext_week_added">Только %1$s: %2$s</string>
     <string name="ux300_ext_week_deadlines">Домашка на неделю · осталось %1$d</string>

@@ -3,9 +3,9 @@
     <string name="ux60_chat_recording_pending">Сначала отправьте или удалите сохранённую запись.</string>
     <string name="ux60_form_saved_refresh_failed">Ответ сохранён. Не удалось обновить список. Нажмите «Обновить», чтобы загрузить его снова.</string>
     <string name="ux60_shell_projection_failed">Не удалось обновить данные приложения. Сохранённые данные доступны.</string>
-    <string name="ux60_widget_other_profile">Занятие из виджета относится к другому профилю. Открыто ваше расписание.</string>
+    <string name="ux60_widget_other_profile">Пара из виджета относится к другому профилю. Открыто ваше расписание.</string>
     <string name="ux60_widget_other_group">Группа изменилась. Открыто расписание выбранной группы.</string>
-    <string name="ux60_widget_lesson_unavailable">Это занятие больше не найдено. Проверьте обновлённое расписание.</string>
+    <string name="ux60_widget_lesson_unavailable">Эта пара больше не найдена. Проверьте обновлённое расписание.</string>
     <string name="ux60_feedback_dismiss">Скрыть</string>
     <string name="ux60_busy_operation">%1$s, выполняется</string>
 </resources>

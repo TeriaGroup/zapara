@@ -30,7 +30,6 @@
     <string name="ux100_common_active_explanation">Эта группа участвует в поиске пересечений.</string>
     <string name="ux100_common_refresh_failed">Повторить обновление расписаний</string>
     <string name="ux100_common_accessibility_map">Открыть выбранный план</string>
-    <string name="ux100_common_public_name">Расписание военмех</string>
     <string name="ux100_common_description_friends">Сравнение расписаний учебных групп</string>
     <string name="ux100_common_description_group">Темы, опросы и домашка группы</string>
     <string name="ux100_common_description_community">Участники, заявки и членство</string>

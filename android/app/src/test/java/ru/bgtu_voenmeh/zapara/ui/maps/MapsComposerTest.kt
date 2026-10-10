@@ -180,7 +180,7 @@ class MapsComposerTest {
             "Следующая пара · завтра 09:00 · 493 ГК",
             MapsComposer.contextLine(nowEve, emptyList(), LocalDate.of(2026, 9, 8) to lesson, XmlCopy)
         )
-        assertEquals("Нет предстоящих занятий", MapsComposer.contextLine(nowEve, emptyList(), null, XmlCopy))
+        assertEquals("Нет предстоящих пар", MapsComposer.contextLine(nowEve, emptyList(), null, XmlCopy))
     }
 
     @Test fun next_lesson_skips_sunday_and_finds_monday() {

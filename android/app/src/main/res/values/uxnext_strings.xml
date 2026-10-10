@@ -8,7 +8,6 @@
     <string name="uxnext_homework_shared_failed">Задания группы не обновились. Личные задания доступны.</string>
     <string name="uxnext_homework_shared_auth">Войдите снова, чтобы увидеть задания группы.</string>
     <string name="uxnext_homework_shared_save_failed">Готовность не сохранилась. Обновите задания группы и повторите.</string>
-    <string name="uxnext_homework_no_deadline">Без срока</string>
     <string name="uxnext_homework_manual_hint">Расписания предметов пока нет. Укажите предмет вручную; срок появится после загрузки подходящих пар.</string>
     <string name="uxnext_homework_manual_add">Создать по введённому предмету</string>
     <string name="uxnext_subgroup_changed">Подгруппа изменена</string>

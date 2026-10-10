@@ -74,3 +74,11 @@ test("product name is one catalog constant and keeps the name the app already sh
   assert.equal(S.productName, "Расписание военмех");
   assert.match(read("web/src/App.tsx"), /className="brand">\{S\.productName\}</);
 });
+
+test("android catalog resources are generated and not defined twice (#12)", async () => {
+  const generator = await import(join(root, "scripts/design/strings.mjs"));
+  assert.equal(read("android/app/src/main/res/values/strings_catalog.xml"), generator.androidFile, "запустите node scripts/design/strings.mjs");
+  assert.deepEqual(generator.androidDuplicates(), []);
+  assert.match(generator.androidFile, /<string name="notification_odd">нечётная<\/string>/);
+  assert.match(generator.androidFile, /<string name="settings_about_title">Расписание военмех<\/string>/);
+});
