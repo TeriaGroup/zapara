@@ -77,6 +77,45 @@ class ScreensTest {
         audit(name)
     }
 
+    /** План этажа декодируется в Dispatchers.IO — даём ему реальное время, иначе на рендере «Загружаем план». */
+    private fun shotSettled(name: String, content: @Composable () -> Unit) {
+        rule.mainClock.autoAdvance = true
+        rule.setContent(content)
+        repeat(8) { Thread.sleep(250); rule.mainClock.advanceTimeBy(500); rule.waitForIdle() }
+        captureScreenRoboImage(File(out, "$name.png").path)
+        audit(name)
+    }
+
+    /** Масштаб и сдвиг для аудитории пары: MapFocus (#103), если он есть в ветке; иначе как на develop — весь этаж. */
+    private fun lessonFocus(rect: ru.bgtu_voenmeh.zapara.data.CoordsRect): Triple<Float, Float, Float> = try {
+        val cls = Class.forName("ru.bgtu_voenmeh.zapara.ui.maps.MapFocus")
+        val f = cls.getMethod("focus", ru.bgtu_voenmeh.zapara.data.CoordsRect::class.java).invoke(cls.getField("INSTANCE").get(null), rect)
+        Triple(f.javaClass.getMethod("getZoom").invoke(f) as Float, f.javaClass.getMethod("getPanX").invoke(f) as Float,
+            f.javaClass.getMethod("getPanY").invoke(f) as Float)
+    } catch (_: ClassNotFoundException) { Triple(1f, 0f, 0f) }
+
+    private fun mapsLesson(room: String, line: String): ru.bgtu_voenmeh.zapara.ui.maps.MapsUiState {
+        val plan = File(ctx.cacheDir, "gk2.jpg").also { f -> f.outputStream().use { o -> File("src/main/assets/maps/karta-glavnyj-korpus-2-etazh-2022.jpg").inputStream().use { it.copyTo(o) } } }
+        val size = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { android.graphics.BitmapFactory.decodeFile(plan.path, it) }
+        val key = ru.bgtu_voenmeh.zapara.ui.maps.FloorKey("ГК", 2)
+        val rect = ru.bgtu_voenmeh.zapara.data.MapResolve.findCoords(ru.bgtu_voenmeh.zapara.data.MapStore(ctx).coords(), "ГК", 2, room)
+        val (zoom, panX, panY) = rect?.let { lessonFocus(it) } ?: Triple(1f, 0f, 0f)
+        val st = ru.bgtu_voenmeh.zapara.ui.maps.MapsUiState(loaded = true, hasGroup = true, building = "ГК", floor = 2, planFile = plan,
+            mode = ru.bgtu_voenmeh.zapara.ui.maps.MapMode.Lesson, contextLine = line, unmarked = false,
+            rasterCatalog = mapOf(key to ru.bgtu_voenmeh.zapara.ui.maps.FloorRaster(plan, ru.bgtu_voenmeh.zapara.ui.maps.RasterSize(maxOf(1, size.outWidth), maxOf(1, size.outHeight)))),
+            floorFiles = mapOf(2 to plan), highlight = rect?.let { ru.bgtu_voenmeh.zapara.ui.maps.HighlightUi(it, room) },
+            roomUnmarked = rect == null, zoom = zoom, panX = panX, panY = panY)
+        if (rect == null) try { // поле из #103; на develop его нет
+            ru.bgtu_voenmeh.zapara.ui.maps.MapsUiState::class.java.getDeclaredField("unmarkedRoom").apply { isAccessible = true }.set(st, room)
+        } catch (_: NoSuchFieldException) {}
+        return st
+    }
+
+    @Test fun s38() { val st = mapsLesson("213", "Физика · 10:50–12:20 · 213 ГК")
+        shotSettled("38-maps-lesson-room-on-plan-light") { Shell(false, Section.Maps, chipOdd) { ru.bgtu_voenmeh.zapara.ui.maps.MapsSection(st, {}) } } }
+    @Test fun s39() { val st = mapsLesson("229", "Физика · 10:50–12:20 · 229 ГК")
+        shotSettled("39-maps-lesson-room-not-on-plan-light") { Shell(false, Section.Maps, chipOdd) { ru.bgtu_voenmeh.zapara.ui.maps.MapsSection(st, {}) } } }
+
     private fun audit(name: String) {
         val lines = mutableListOf<String>()
         val density = ctx.resources.displayMetrics.density
