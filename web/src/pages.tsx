@@ -32,7 +32,7 @@ import { HomeworkRecipients, allHomeworkAudience, audienceLabel, useHomeworkAudi
 import { canonicalUtc, localDateTimeInput } from "./utc";
 import { homeworkSaveError, validateHomeworkDraft } from "./homework-draft";
 import { checkHomeworkUpload, runHomeworkSave } from "./homework-save";
-import { addDays, dayTitle, isoDay, lessonsOn, sameSubject } from "./parity";
+import { addDays, isoDay, lessonsOn, sameSubject } from "./parity";
 import { forecastIntersections, intersectionPlace, lessonPresenceCaption, markDescription, marksForLesson, presenceForLesson, resolveFriendSchedules, type FriendMark, type FriendPresence } from "./intersections";
 import { composeSummary, onWeek, summaryCode, stripType, roomLabel } from "./summary";
 import { lessonsOfGroupTeacher, teacherCode, teacherRows, teacherWeek, type TeacherRow } from "./teachers";
@@ -66,6 +66,8 @@ import { reconcileGroupHomeChat } from "./group-home-refresh";
 import { Avatar, AvatarEditor } from "./avatar-view";
 import { ShareMenu } from "./share";
 import { LessonSheet } from "./lesson-sheet";
+import { RuDateField } from "./ru-date-field";
+import { dayHeading, weekParity, weekRange } from "./week-format";
 import { dayTimeline, lessonStatuses, nextSummary, type LessonStatus } from "./day-timeline";
 import { Icon } from "./icons";
 import { MapViewer } from "./map-viewer";
@@ -327,49 +329,74 @@ export function WeekPage() {
   const dateReveal = useDateReveal(isoDay(monday));
   const [sheet, setSheet] = useState<{ lesson: Lesson; date: Date } | null>(null);
   const weekGroupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name || "";
+  const [searchOpen, setSearchOpen] = useState(!!query.trim());
+  const [planningOpen, setPlanningOpen] = useState(false);
+  const moreRef = useRef<HTMLDetailsElement>(null);
+  const closeMore = () => { if (moreRef.current) moreRef.current.open = false; };
+  useEffect(() => {
+    const away = (event: Event) => { const node = moreRef.current; if (node?.open && !node.contains(event.target as Node)) node.open = false; };
+    const key = (event: KeyboardEvent) => { const node = moreRef.current; if (event.key === "Escape" && node?.open) { node.open = false; node.querySelector("summary")?.focus(); } };
+    document.addEventListener("pointerdown", away); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", key); };
+  }, []);
+  const parity = weekParity(app.date, period, app.invert);
+  const today = isoDay(new Date());
   return (
-    <section className="page">
-      <Head title="Неделя" text={period?.title}>
-        <button className="icon-btn" type="button" aria-label="Предыдущая неделя" onClick={() => app.setDate(addDays(app.date, -7))}><Icon name="left" /></button>
+    <section className="page week-page">
+      {/* Липкая компактная шапка: только навигация по неделям, «Сегодня», поиск и «⋯» (#14). */}
+      <div className="week-bar" role="toolbar" aria-label="Неделя">
+        <button className="icon-btn quiet" type="button" aria-label="Предыдущая неделя" onClick={() => app.setDate(addDays(app.date, -7))}><Icon name="left" /></button>
+        <h1 className="week-bar-title">{weekRange(monday, days[6])}{parity && <span className="muted"><span className="parity-long"> · {parity}</span><span className="parity-short" aria-hidden="true"> · {parity.replace(/ная$/, ".")}</span></span>}</h1>
+        <button className="icon-btn quiet" type="button" aria-label="Следующая неделя" onClick={() => app.setDate(addDays(app.date, 7))}><Icon name="right" /></button>
         <button className="btn" type="button" onClick={() => app.setDate(new Date())}>Сегодня</button>
-        <button className="icon-btn" type="button" aria-label="Следующая неделя" onClick={() => app.setDate(addDays(app.date, 7))}><Icon name="right" /></button>
-      </Head>
+        <span className="week-bar-spacer" />
+        <button className="icon-btn quiet" type="button" aria-label="Найти пару на этой неделе" aria-expanded={searchOpen} onClick={() => { setSearchOpen(value => !value); if (searchOpen) setQuery(""); }}><Icon name="search" /></button>
+        <details className="week-more" ref={moreRef}>
+          <summary className="icon-btn quiet" aria-label="Ещё действия недели"><Icon name="more" /></summary>
+          <div className="week-more-menu card stack">
+            <RuDateField label="Неделя по дате" value={app.date} onChange={date => app.setDate(date)} />
+            <p className="muted week-more-range">{weekRange(monday, days[6], true)}{app.timetableAvailable && period ? ` · ${weekDays.some(day => !day.known) ? "известных пар" : "пар"}: ${weekTotal}` : ""}</p>
+            {weekDays.some(day => day.lessons.length > 0) && <button className="btn quiet" type="button" onClick={() => { const first = weekDays.find(day => day.lessons.length > 0)!; app.setDate(first.date); navigate(`/schedule?date=${isoDay(first.date)}`); }}>Первый учебный день</button>}
+            <label className="check"><input type="checkbox" checked={hideEmpty} onChange={event => setHideEmpty(event.target.checked)} />Скрыть дни без пар</label>
+            {app.timetableAvailable && <TimetableExportTools days={weekDays} groupId={app.groupId} groupName={weekGroupName || app.groupId} />}
+            <button className="btn quiet" type="button" onClick={() => { closeMore(); setPlanningOpen(true); }}>Планирование недели</button>
+          </div>
+        </details>
+      </div>
+      {searchOpen && <SearchField label="Найти пару на этой неделе" value={query} onChange={setQuery} />}
       <TimetableState />
-      <SearchField label="Найти пару на этой неделе" value={query} onChange={setQuery}/><label className="check"><input type="checkbox" checked={hideEmpty} onChange={event=>setHideEmpty(event.target.checked)}/>Скрыть дни без пар</label><div className="row"><label className="field">Неделя по дате<input type="date" value={isoDay(app.date)} onChange={event=>{const date=localDay(event.target.value);if(date)app.setDate(date);}}/></label>{weekDays.some(day=>day.lessons.length>0)&&<button className="btn" onClick={()=>{const first=weekDays.find(day=>day.lessons.length>0)!;app.setDate(first.date);navigate(`/schedule?date=${isoDay(first.date)}`);}}>Первый учебный день</button>}</div>
       {app.timetableAvailable && visibleDays.length===0 && <FilterEmpty onReset={()=>{setQuery("");setHideEmpty(false);}}/>}
-      {app.timetableAvailable && period && <div className="section-overview">
-        <strong>{weekDays.some(day=>!day.known)?"Известных пар за неделю":"Пар за неделю"}: {weekTotal}</strong>
-        <span>{monday.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} — {days[6].toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
-      </div>}
-      {app.timetableAvailable&&<TimetableExportTools days={weekDays} groupId={app.groupId} groupName={app.catalog?.groups.find(group=>group.id===app.groupId)?.name||app.groupId}/>}
-      <details className="card week-planning-tools"><summary>Планирование недели</summary><div className="stack">
-      <WeekComparison lessons={shown} date={app.date} period={period} invert={app.invert} available={app.timetableAvailable}/>
-      <SubgroupPreview key={'week-subgroups'+studyOwner(app)}/>
-      <AssessmentPlanner key={'assessments'+studyOwner(app)}/>
-      <RecentWeekChanges key={'changes'+studyOwner(app)+isoDay(monday)}/>
-      {!app.privateHomework.readFailed?<WeekHomework items={app.homework} days={days} dateOf={item=>{const due=app.timetableAvailable&&period?personalHomeworkDue(item,shown,period,app.invert):null;return due?isoDay(due):null;}}/>:<p role="status">Личные сроки недоступны: сохранённые задания не удалось прочитать.</p>}
-      </div></details>
       <p className="swipe-hint">Смахните, чтобы сменить неделю</p>
-      <div className="week swipe date-reveal" {...swipe} ref={node => { swipe.ref(node); dateReveal.current = node; }}>
-        {visibleDays.map(({ date, matches: dayLessons, lessons: originalLessons, known }) => (
-          <article className="card" key={isoDay(date)} aria-current={isoDay(date) === isoDay(new Date()) ? "date" : undefined}>
-            <h2 className="week-day-head">{dayTitle(date)} <span className="muted">{date.getDate()}</span>{app.timetableAvailable && <span className="chip">{known?`Пар: ${dayLessons.length}`:"Нет данных"}</span>}</h2>
-            {isoDay(date) === isoDay(new Date()) && <span className="chip">Сегодня</span>}
-            <button className="btn" type="button" onClick={() => { app.setDate(date); navigate(`/schedule?date=${isoDay(date)}`); }}>Открыть день</button>
-            {known&&<p className="muted">Учебное время: {dayLoad(originalLessons).minutes} мин</p>}<div className="stack">
+      <div className="week week-grid swipe date-reveal" {...swipe} ref={node => { swipe.ref(node); dateReveal.current = node; }}>
+        {visibleDays.map(({ date, matches: dayLessons, known }) => {
+          const isToday = isoDay(date) === today;
+          const head = <h2 className="week-day-head"><Link to={`/schedule?date=${isoDay(date)}`} onClick={() => app.setDate(date)}>{dayHeading(date)}</Link>{isToday && <span className="chip week-today">Сегодня</span>}</h2>;
+          if (!app.timetableAvailable || !period || dayLessons.length === 0)
+            return <article className="card week-day week-day-empty" key={isoDay(date)} aria-current={isToday ? "date" : undefined}>{head}<span className="muted">{!app.timetableAvailable || !period ? "" : known ? "Нет пар" : "Нет данных"}</span></article>;
+          return <article className="card week-day" key={isoDay(date)} aria-current={isToday ? "date" : undefined}>
+            {head}
+            <div className="week-day-lessons">
               {/* Пары, перерывы и окна — одним списком по времени; при поиске показываем только найденные пары (#13). */}
               {(query.trim() ? dayLessons.map((lesson, index) => ({ kind: "lesson" as const, lesson, index })) : dayTimeline(dayLessons)).map(item => item.kind === "lesson"
                 ? <button className="week-lesson" type="button" key={item.lesson.timeStart + item.lesson.subjectRaw + (item.lesson.teacherRaw || "")} onClick={() => setSheet({ lesson: item.lesson, date })}
-                    aria-label={`${item.lesson.timeStart}–${item.lesson.timeEnd}, ${item.lesson.subjectRaw}. Действия пары`}>
-                    <b>{item.lesson.timeStart}–{item.lesson.timeEnd}</b> {item.lesson.subjectRaw}<span className="muted">{[roomLabel(item.lesson), item.lesson.teacherRaw].filter(Boolean).join(" · ")}</span></button>
+                    aria-label={`${item.lesson.timeStart}–${item.lesson.timeEnd}, ${item.lesson.subjectRaw}${roomLabel(item.lesson) ? `, ${roomLabel(item.lesson)}` : ""}. Действия пары`}>
+                    <b className="week-lesson-time">{item.lesson.timeStart}</b><span className="week-lesson-subject">{item.lesson.subjectRaw}</span>{roomLabel(item.lesson) && <span className="week-lesson-room">{roomLabel(item.lesson)}</span>}</button>
                 : <p className={"free-gap free-" + item.kind} key={`gap-${item.start}`}><span>{item.label}</span><span className="free-gap-duration">{item.durationLabel}</span></p>)}
-              {app.timetableAvailable && period && dayLessons.length === 0 && <span className="muted">{known ? "Нет пар" : "Дата вне известного периода"}</span>}
             </div>
-          </article>
-        ))}
+          </article>;
+        })}
       </div>
       <LessonSheetFor open={sheet} groupName={weekGroupName} onClose={() => setSheet(null)}
         dayHref={(lesson, date) => `/schedule?date=${isoDay(date)}&time=${lesson.timeStart}&subject=${encodeURIComponent(lesson.subjectRaw)}`} />
+      <Sheet title="Планирование недели" open={planningOpen} onClose={() => setPlanningOpen(false)}>
+        <div className="stack">
+          <WeekComparison lessons={shown} date={app.date} period={period} invert={app.invert} available={app.timetableAvailable}/>
+          <SubgroupPreview key={'week-subgroups'+studyOwner(app)}/>
+          <AssessmentPlanner key={'assessments'+studyOwner(app)}/>
+          <RecentWeekChanges key={'changes'+studyOwner(app)+isoDay(monday)}/>
+          {!app.privateHomework.readFailed?<WeekHomework items={app.homework} days={days} dateOf={item=>{const due=app.timetableAvailable&&period?personalHomeworkDue(item,shown,period,app.invert):null;return due?isoDay(due):null;}}/>:<p role="status">Личные сроки недоступны: сохранённые задания не удалось прочитать.</p>}
+        </div>
+      </Sheet>
     </section>
   );
 }

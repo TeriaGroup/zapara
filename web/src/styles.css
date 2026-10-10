@@ -717,3 +717,45 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .week-lesson { display: grid; gap: 2px; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 8px; margin: 0 -8px; color: inherit; font: inherit; cursor: pointer; }
 .week-lesson:hover { background: var(--selection); }
 .week-lesson:focus-visible { outline: 2px solid var(--line-strong); }
+
+/* #14: «Неделя» — липкая компактная шапка, плотные строки пар, сетка 7 колонок на широком экране. */
+.week-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 8px 0; background: var(--canvas); border-bottom: 1px solid var(--line); }
+.week-bar-title { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; }
+.week-bar-spacer { flex: 1; }
+.week-more { position: relative; }
+.week-more > summary { list-style: none; cursor: pointer; }
+.week-more > summary::-webkit-details-marker { display: none; }
+.week-more-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; width: min(320px, calc(100vw - 32px)); box-shadow: 0 8px 24px #0000002e; }
+.week-more-range { margin: 0; }
+.ru-date-row { display: flex; align-items: center; gap: 6px; }
+.ru-date-row input:not(.ru-date-native) { flex: 1; min-width: 0; }
+.ru-date-native { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.ru-date-error { color: var(--danger, #b42318); font-size: 13px; }
+.week-grid .card.week-day { gap: 8px; padding: 12px; }
+.week-day-head { font-size: 15px; }
+.week-day-head a { color: inherit; text-decoration: none; font-weight: 600; }
+.week-day-head a:hover { text-decoration: underline; }
+.week-day-head .chip.week-today { margin-left: auto; background: var(--accent); color: var(--on-accent); }
+.week-day-lessons { display: grid; gap: 4px; width: 100%; align-content: start; }
+.week-day-empty { flex-direction: row !important; align-items: baseline !important; justify-content: space-between; }
+.week-day-empty .week-day-head { width: auto; }
+.week-grid .week-lesson { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 6px 8px; margin: 0 -8px; }
+.week-lesson-subject { flex: 1 1 8em; min-width: 0; }
+.week-lesson-room { color: var(--muted); font-size: 13px; }
+.week-grid .free-gap { padding: 4px 8px; }
+@media (min-width: 1280px) {
+  .week.week-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+  .week-grid .week-lesson { flex-direction: column; gap: 0; }
+  .week-grid .week-lesson-subject { flex: none; }
+  .week.week-grid > .card { align-self: start; }
+  .week-day-empty { flex-direction: column !important; }
+}
+.week-more-menu .btn, .week-more-menu .row .btn { justify-content: flex-start; }
+@media (max-width: 959px) {
+  .week-bar { gap: 2px; }
+  .week-bar-title { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .week-bar .icon-btn { width: 36px; min-width: 36px; }
+  .week-bar > .btn { padding-inline: 10px; }
+}
+.parity-short { display: none; }
+@media (max-width: 480px) { .parity-long { display: none; } .parity-short { display: inline; } }
