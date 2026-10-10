@@ -34,9 +34,13 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login(Login::class)
             ->brandName('Расписание военмех')
-            ->colors([
-                'primary' => Color::Amber,
-            ])
+            // Цвета из общих дизайн-токенов (#11): config/design-tokens.php генерирует scripts/design/tokens.mjs.
+            ->colors(array_map(
+                // Оттенок 600 — фон кнопок и бейджей Filament: ставим ровно цвет токена, контраст которого проверен.
+                fn (string|array $value): array => is_array($value) ? $value : array_replace(Color::hex($value), [600 => $value]),
+                config('design-tokens.filament'),
+            ))
+            ->renderHook(\Filament\View\PanelsRenderHook::HEAD_END, fn (): \Illuminate\Contracts\View\View => view('filament.design-tokens'))
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
