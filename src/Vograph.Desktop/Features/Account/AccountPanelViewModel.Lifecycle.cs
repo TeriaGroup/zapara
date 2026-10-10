@@ -140,8 +140,7 @@ public sealed partial class AccountPanelViewModel
                         url => LaunchExternalAsync(provider, url), pending.Token)
                     : await service!.CompleteExternalAsync(provider, link ? secret : null,
                         url => LaunchExternalAsync(provider, url), pending.Token);
-                Apply(result.Snapshot);
-                if (!link) FormFailure(result.Snapshot);
+                if (link) Apply(result.Snapshot); else ApplyForm(result.Snapshot);
                 if (result.Committed && IsAccount)
                 {
                     var user = await service.CachedUserAsync(lifetime.Token);

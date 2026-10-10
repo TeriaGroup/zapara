@@ -71,5 +71,39 @@ public sealed partial class AccountUiFlowTests
         Assert.DoesNotContain("FormError", settings);
     }
 
+    [Fact]
+    public async Task Failed_reauthentication_of_a_signed_in_account_goes_to_the_form_not_the_status_line()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var previous = f.Handler.Send;
+        f.Handler.Send = (request, token) => request.RequestUri!.AbsolutePath == "/api/v1/account/me"
+            ? Task.FromResult(Json(new AccountError("ignored", 401, "invalid_session"), HttpStatusCode.Unauthorized))
+            : previous(request, token);
+        await f.Vm.RefreshRemoteAsync();
+        Assert.True(f.Vm.ShowLogin);
+        Assert.False(f.Profiles.Snapshot.Profile.IsGuest);
+        f.Handler.Send = (_, _) => Task.FromResult(Json(new AccountError("ignored", 401, "invalid_credentials"), HttpStatusCode.Unauthorized));
+        f.Vm.Username = "Test.User"; f.Vm.Password = Password;
+        await f.Vm.SubmitCommand.ExecuteAsync(null);
+        Assert.Contains("Неверный логин или пароль", f.Vm.FormError);
+        Assert.DoesNotContain("Неверный", f.Vm.Status);
+        Assert.False(string.IsNullOrWhiteSpace(f.Vm.Status));
+        f.Vm.Username = "Test.User2";
+        Assert.Equal("", f.Vm.FormError);
+        Assert.DoesNotContain("Неверный", f.Vm.Status);
+    }
+
+    [Fact]
+    public async Task Startup_vault_read_failure_still_shows_in_the_status_line()
+    {
+        await using var f = new Fixture();
+        f.Vault.FailRead = true;
+        await f.Vm.InitializeAsync();
+        Assert.Equal("", f.Vm.FormError);
+        Assert.NotEqual("Гостевой профиль: данные доступны без аккаунта и сети.", f.Vm.Status);
+        Assert.Equal(Vograph.Desktop.Services.Loc.Current.T("accountFailed"), f.Vm.Status);
+    }
+
     private static string FindRepoFile(string relative) => Path.Combine(ResourceKeysTests.RepoRoot(), relative);
 }

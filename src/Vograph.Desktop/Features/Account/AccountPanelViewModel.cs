@@ -209,6 +209,20 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         await RefreshCapabilities();
     }
 
+    /// <summary>#148: снимок, пришедший как результат отправки формы; его сбой показан в FormError, не в Status.</summary>
+    private ProfileSnapshot? formSnapshot;
+
+    /// <summary>#148: применить результат входа/регистрации из формы: сбой — в слот ошибки формы, строка состояния нейтральна.</summary>
+    private void ApplyForm(ProfileSnapshot value)
+    {
+        formSnapshot = value.AccountFailure is null ? null : value;
+        Apply(value);
+        if (value.AccountFailure is { } failure) FormError = FailureText(failure);
+    }
+
+    private string NeutralStatus(ProfileSnapshot value) =>
+        value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
+
     private void Apply(ProfileSnapshot value)
     {
         if (disposed) return;
@@ -226,9 +240,10 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         snapshot = value;
         if (value.ReauthRequired) Avatar = null;
         Status = value.Phase == ProfilePhase.RecoveryRequired ? T("accountRecovery")
-            // #148: у гостя сбой аккаунта бывает только от попытки входа — он в FormError, а не в строке состояния
-            // (её повторяет подзаголовок «Аккаунт» в настройках, и там «Неверный логин или пароль» висел бы дальше).
-            : value.AccountFailure is { } failure ? (value.Profile.IsGuest ? T("accountGuest") : FailureText(failure))
+            // #148: сбой из попытки входа/регистрации (в том числе повторного входа в аккаунт) — в FormError, а строка
+            // состояния (её повторяет подзаголовок «Аккаунт» в настройках) нейтральна. Сбои запуска и восстановления
+            // (например, чтение хранилища сеанса) по-прежнему видны в строке состояния.
+            : value.AccountFailure is { } failure ? (value.Equals(formSnapshot) ? NeutralStatus(value) : FailureText(failure))
             : value.Failure is not null ? T("accountTransitionFailed")
             : value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
         foreach (var name in new[] { nameof(IsGuest), nameof(IsAccount), nameof(CanAct), nameof(NeedsRecovery), nameof(ShowLogin), nameof(ShowLoginForm) })
@@ -336,8 +351,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             else
             {
                 var result = await profiles!.LoginAsync(request.Username, request.Password, lifetime.Token);
-                Apply(result.Snapshot);
-                FormFailure(result.Snapshot);
+                ApplyForm(result.Snapshot);
                 if (result.Committed && result.Snapshot.Phase == ProfilePhase.Idle)
                 {
                     HasPassword = true; // This session was authenticated with the app password.
@@ -390,12 +404,6 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         bool IsCurrent() => !disposed && profiles?.Snapshot.Identity == expected;
         // #148: ошибки формы входа/регистрации — в FormError, остальные операции — в строку состояния, как раньше.
         void Fail(string text) { if (form) FormError = text; else Status = text; }
-    }
-
-    /// <summary>#148: сбой входа из снимка профиля — в слот ошибки формы.</summary>
-    private void FormFailure(ProfileSnapshot value)
-    {
-        if (value.Profile.IsGuest && value.AccountFailure is { } failure) FormError = FailureText(failure);
     }
 
     private string FailureText(AccountClientFailure failure) => T(failure switch
