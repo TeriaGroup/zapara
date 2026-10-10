@@ -803,7 +803,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
               )}
               <div className="meta">
                 <span className="muted" title={new Date(message.createdAt).toLocaleString("ru-RU")}>{when(message.createdAt)}{message.editedAt && !message.deleted ? " · изменено" : ""}{mine && message.read ? " · прочитано" : ""}</span>
-                {!message.deleted && <button className="tool" type="button" aria-label="Действия с сообщением" title="Действия с сообщением" onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}><Icon name="more" size={16} /></button>}
+                {!message.deleted && <button className="tool message-action-toggle" type="button" aria-label="Действия с сообщением" title="Действия с сообщением" aria-expanded={openMenu === message.messageId} onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}><Icon name="more" size={16} /></button>}
               </div>
               {message.reactions.length > 0 && (
                 <div className="react-chips">
