@@ -59,3 +59,26 @@ test("invalid lesson times do not appear as the next group event", () => {
   assert.equal(context.nextLesson, null);
   assert.equal(context.hasContent, false);
 });
+
+test("group context shows the lesson in progress, not the first lesson of the day (#35)", () => {
+  const early: Lesson = { ...lesson, index: 4, timeStart: "14:55", timeEnd: "16:30", subjectNormalized: "Химия" };
+  const late: Lesson = { ...lesson, index: 6, timeStart: "18:30", timeEnd: "20:05", subjectNormalized: "История" };
+  const lessons = [early, late];
+  const during = buildGroupChatContext({ ...base, lessons, now: new Date(2026, 8, 21, 18, 47) });
+  assert.equal(during.nextLesson?.time, "18:30");
+  assert.equal(during.nextLesson?.ongoing, true);
+  const between = buildGroupChatContext({ ...base, lessons, now: new Date(2026, 8, 21, 17, 0) });
+  assert.equal(between.nextLesson?.time, "18:30");
+  assert.equal(between.nextLesson?.ongoing, false);
+  // Полночь выбранного дня (так раньше передавалось app.date) даёт первую пару — поэтому странице нужно реальное время.
+  const midnight = buildGroupChatContext({ ...base, lessons, now: new Date(2026, 8, 21) });
+  assert.equal(midnight.nextLesson?.time, "14:55");
+});
+
+test("group chat page passes the real clock, not the selected schedule date (#35)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("./pages.tsx", import.meta.url), "utf8");
+  const call = source.slice(source.indexOf("buildGroupChatContext({"), source.indexOf("});", source.indexOf("buildGroupChatContext({")));
+  assert.match(call, /\n\s*now,\n/);
+  assert.doesNotMatch(call, /now:\s*app\.date/);
+});

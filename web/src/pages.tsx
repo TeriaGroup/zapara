@@ -1654,6 +1654,8 @@ function GroupContent() {
   const topicPage = topicPageState.key === communityId ? topicPageState.value : null;
   const communityTimetable = useCommunityTimetable(home?.groupName ?? null);
   const communitySnapshot = communityTimetable.payload;
+  // Реальное время, а не выбранная дата расписания (app.date — полночь выбранного дня, #35).
+  const now = useClock();
   const groupContext = buildGroupChatContext({
     communityGroupName: communitySnapshot?.group.name ?? null,
     selectedGroupName: communitySnapshot?.group.name ?? null,
@@ -1663,7 +1665,7 @@ function GroupContent() {
     period: communitySnapshot?.period ?? null,
     invert: app.invert,
     topics: topicPage?.topics ?? [],
-    now: app.date,
+    now,
   });
   const contextExpanded = contextExpandedByGroup[communityId] ?? !compact;
   const activeBallotTopic = topicPage?.topics.find(topic => topic.topicId !== null && topic.kind === "ballots" && topic.activeBallots > 0);
@@ -2034,12 +2036,12 @@ function GroupContent() {
                 </button>
               </div>
               {contextExpanded ? <div className="group-context-items">
-                {groupContext.nextLesson && <p><b>Ближайшая пара по расписанию</b> · {groupContext.nextLesson.date.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short" })}, {groupContext.nextLesson.time} · {groupContext.nextLesson.subject}{groupContext.nextLesson.room && ` · ${groupContext.nextLesson.room}`}</p>}
+                {groupContext.nextLesson && <p><b>{groupContext.nextLesson.ongoing ? "Сейчас идёт пара" : "Ближайшая пара по расписанию"}</b> · {groupContext.nextLesson.date.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short" })}, {groupContext.nextLesson.time} · {groupContext.nextLesson.subject}{groupContext.nextLesson.room && ` · ${groupContext.nextLesson.room}`}</p>}
                 {groupContext.activeBallots > 0 && <div className="row"><span>Активных голосований: {groupContext.activeBallots}</span>
                   {activeBallotTopic && <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread(activeBallotTopic); }}>Открыть</button>}</div>}
                 {groupContext.unread > 0 && <p>Непрочитанных сообщений в каналах: {groupContext.unread}</p>}
               </div> : <p className="muted group-context-collapsed">
-                {[groupContext.nextLesson ? `Следующая пара ${groupContext.nextLesson.time}` : null,
+                {[groupContext.nextLesson ? `${groupContext.nextLesson.ongoing ? "Сейчас пара" : "Следующая пара"} ${groupContext.nextLesson.time}` : null,
                   groupContext.activeBallots > 0 ? `Голосований: ${groupContext.activeBallots}` : null,
                   groupContext.unread > 0 ? `Непрочитано: ${groupContext.unread}` : null].filter(Boolean).join(" · ")}
               </p>}
