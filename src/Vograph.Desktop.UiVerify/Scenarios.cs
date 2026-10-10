@@ -150,13 +150,15 @@ public static class Scenarios
         Step(report, ui, "Домашка: выбор предмета и отмена удаления", () =>
         {
             ui.Click("Nav.Homework");
-            var before = ui.FindAll("Homework.Delete").Length;
+            // #9: rows are counted by their one visible action; «Удалить» lives in the row sheet «⋯».
+            var before = ui.FindAll("Homework.Done").Length;
             if (before == 0) throw new Exception("в разделе нет ни одной домашки, отменять нечего");
             ui.Click("Homework.Add");
             ui.Find("Dialog.Search");
             var picker = ui.Shot("dialog-subject-picker");
             ui.Keys(VirtualKeyShort.ESCAPE);
             if (ui.IsShown("Dialog.Search")) throw new Exception("Escape не закрыл выбор предмета");
+            ui.Click("HomeworkRow.More");
             ui.Click("Homework.Delete");
             ui.Find("Dialog.Confirm");
             var confirm = ui.Shot("dialog-confirm");
@@ -164,7 +166,7 @@ public static class Scenarios
             if (ui.IsShown("Dialog.Confirm")) throw new Exception("«Отмена» не закрыла подтверждение");
             // «Отмена» means cancel: the row it was aimed at is still there. Cancel was the last action of this
             // step before, so a Cancel that deleted the row passed just as well.
-            var after = ui.FindAll("Homework.Delete").Length;
+            var after = ui.FindAll("Homework.Done").Length;
             if (after != before) throw new Exception($"«Отмена» изменила список: было {before} строк, стало {after}");
             return ($"SubjectPicker и Confirm показаны, «Отмена» оставила все {after} строк", picker + ", " + confirm);
         });
