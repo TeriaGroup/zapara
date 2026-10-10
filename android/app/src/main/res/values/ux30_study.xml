@@ -6,7 +6,6 @@
     <string name="ux30_study_browse_count">Найдено заданий: %1$d</string>
     <string name="ux30_study_clear_homework_search">Очистить поиск заданий</string>
     <string name="ux30_study_attachment_limit">Можно прикрепить не более шести файлов. Удалите один, чтобы добавить другой.</string>
-    <string name="ux30_study_show_more_homework">Показать ещё %1$d заданий</string>
     <string name="ux30_study_hide_homework">Свернуть задания</string>
     <string name="ux30_study_lessons_date">d MMMM yyyy</string>
     <string name="ux30_study_week_empty_day">Открыть день</string>
