@@ -93,7 +93,7 @@ test("#9 (G-2): tapping the task row opens the same sheet as «⋯», like a les
 
   const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
   assert.match(css, /\.homework-open \{ position: absolute; inset: -8px; z-index: 0;/);
-  assert.match(css, /\.homework-row:has\(> \.homework-open\) > :not\(\.homework-open\) \{ position: relative; z-index: 1; pointer-events: none; \}/);
+  assert.match(css, /\.homework-row:has\(> \.homework-open\) > :not\(\.homework-open, \.sheet\) \{ position: relative; z-index: 1; pointer-events: none; \}/);
   assert.match(css, /\.homework-row:has\(> \.homework-open\) :is\(input, button:not\(\.homework-open\), a, \.chip\[aria-label\]\) \{ pointer-events: auto; \}/);
   // Both task lists (shared copies with edit rights and personal tasks) render HomeworkActions inside .homework-row.
   for (const marker of ['<HomeworkActions title={item.title}', '<HomeworkActions title={`${item.subject}: ${item.text.slice(0, 80)}`}']) {
