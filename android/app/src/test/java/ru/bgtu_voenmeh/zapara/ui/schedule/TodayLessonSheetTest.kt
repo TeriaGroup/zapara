@@ -81,4 +81,14 @@ class TodayLessonSheetTest {
         assertEquals("Нечётная, 7-я неделя", LessonFormat.weekLine(odd = true, weekNumber = 7, copy = XmlCopy))
         assertTrue(src("ScheduleSection.kt").contains("page.weekLine.ifBlank"))
     }
+
+    @Test fun header_chip_is_full_when_it_fits_short_only_to_avoid_a_second_row() {
+        val sl = ru.bgtu_voenmeh.zapara.ui.shell.ShellLogic
+        assertEquals("И831Б · чётная", sl.chip("И831Б", odd = false, copy = XmlCopy))
+        assertEquals("И831Б · чёт.", sl.chipShort("И831Б", odd = false, copy = XmlCopy))
+        // заголовок 150, «Неделя» 80, чип 150/105, зазор 8, ширина 358
+        assertEquals(2, sl.chipVariant(title = 150, actions = 0, full = 150, short = 105, gap = 8, max = 358))
+        assertEquals(3, sl.chipVariant(title = 150, actions = 80, full = 150, short = 105, gap = 8, max = 358))
+        assertEquals("и короткий не помещается — полный", 2, sl.chipVariant(title = 200, actions = 80, full = 150, short = 105, gap = 8, max = 358))
+    }
 }

@@ -25,12 +25,14 @@ fun Shell(
     stale: Boolean = false,
     homeworkBadge: Int = 0,
     fontScale: Float = 1f,
+    // Как в приложении (ZaparaApp): короткая форма чипа для шапки, где полная не помещается в строку.
+    chipShort: String? = chip?.replace(" · нечётная", " · нечёт.")?.replace(" · чётная", " · чёт."),
     content: @Composable () -> Unit
 ) {
     val d = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
         ZaparaTheme(choice = if (dark) ThemeChoice.Dark else ThemeChoice.Light, motion = MotionSettings(false, 0f)) {
-            CompositionLocalProvider(LocalShellChrome provides ShellChrome(chip, stale, hasGroup) {}) {
+            CompositionLocalProvider(LocalShellChrome provides ShellChrome(chip, stale, hasGroup, chipShort) {}) {
                 if (section == null) Box(Modifier.fillMaxSize()) { content() }
                 else ZAppScaffold(conversation = section == Section.Chat || section == Section.Group,
                     bottomBar = {
