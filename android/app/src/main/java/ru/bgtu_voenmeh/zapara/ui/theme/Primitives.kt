@@ -138,7 +138,8 @@ fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, en
                     modifier = if (startAligned) Modifier.fillMaxWidth() else Modifier)
                 {
                     if (leadingIcon != null) Icon(painterResource(leadingIcon), null, Modifier.size(Zapara.space.icon), tint = iconColor)
-                    Text(text, style = Zapara.typography.bodyStrong,
+                    // #100: при fontScale 2.0 «Пользовательское соглашение» рвалось посреди слова; слово ужимается целиком.
+                    ru.bgtu_voenmeh.zapara.ui.components.WordFitText(text, style = Zapara.typography.bodyStrong,
                         textAlign = if (startAligned) TextAlign.Start else TextAlign.Center,
                         modifier = Modifier.weight(1f, fill = startAligned))
                     if (trailingIcon != null) Icon(painterResource(trailingIcon), null,

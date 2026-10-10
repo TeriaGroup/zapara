@@ -32,6 +32,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->app->setLocale('ru');
+        // R2-21: пустой пункт сортировки на телефоне — «По умолчанию», а не «-» (запасной вариант Filament).
+        \Filament\Tables\Table::configureUsing(fn (\Filament\Tables\Table $table) => $table->defaultSortOptionLabel('По умолчанию'));
         // Account passwords are ASP.NET Identity hashes; see ZaparaHasher (needed by Filament's password confirmation).
         Hash::extend('zapara', fn ($app) => new ZaparaHasher($app['hash']->createBcryptDriver()));
         config(['hashing.driver' => 'zapara']);

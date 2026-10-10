@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.ui.components.FontFit
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.pressScale
 import androidx.compose.material3.Icon
@@ -65,7 +66,7 @@ fun ZTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
             val stroke = 1.dp.toPx()
             val y = size.height - stroke / 2
             drawLine(line, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
-        }.padding(horizontal = Zapara.space.l)
+        }.padding(horizontal = Zapara.space.l, vertical = Zapara.space.xs) // #100: чип группы не садится на линию шапки
     val spacing = Zapara.space.s
     Layout(
         modifier = container,
@@ -177,9 +178,12 @@ fun ZBottomBar(
             val inlineWidths = labelWidths.map { with(density) { it.toDp() } + 22.dp + Zapara.space.s + Zapara.space.l }
             val inline = short && maxWidth > LocalConfiguration.current.screenHeightDp.dp &&
                 inlineWidths.maxOrNull()!! <= maxWidth / (Section.bar.size + 1)
-            val iconOnly = density.fontScale >= 1.3f
             val columns = Section.bar.size + 1
             val cell = maxWidth / columns
+            // #100 / AN-02: подписи видны при любом fontScale. Растут до 1.3×, дальше и при нехватке места
+            // ужимаются одинаково для всех пунктов (раньше при fontScale ≥ 1.3 оставались только значки).
+            val widest = with(density) { (labelWidths.maxOrNull() ?: 0).toDp() }
+            val labelScale = FontFit.barLabelScale(density.fontScale, widest.value, (cell - Zapara.space.xs * 2).value)
             val target = cell * (activeIndex % columns) + (cell - 18.dp) / 2
             val offsetX by animateDpAsState(targetValue = target, animationSpec = tween(motion.ms(Durations.indicator), easing = ZaparaEase), label = "indicator")
             Column {
@@ -198,7 +202,7 @@ fun ZBottomBar(
                                 indicatorX = offsetX,
                                 indicatorShift = offsetX - target,
                                 inline = inline,
-                                iconOnly = iconOnly,
+                                labelScale = labelScale,
                                 onClick = { if (section != null) onSection(section) else onSections() }
                             )
                         }
@@ -221,7 +225,7 @@ private fun BarItem(
     indicatorX: Dp,
     indicatorShift: Dp,
     inline: Boolean,
-    iconOnly: Boolean,
+    labelScale: Float,
     onClick: () -> Unit
 ) {
     val c = Zapara.colors
@@ -230,7 +234,6 @@ private fun BarItem(
         onClick = onClick,
         modifier = modifier.heightIn(min = 64.dp).testTag(tag).semantics {
             selected = active
-            if (iconOnly) contentDescription = label
         }.pressScale(source),
         interactionSource = source,
         contentPadding = PaddingValues(0.dp)
@@ -245,15 +248,22 @@ private fun BarItem(
                         tint = if (active) c.text1 else c.text3
                     )
                     if (badge != null) {
+                        // #100: бейдж — вне значка (сдвиг вверх-вправо) и фиксированного размера: при fontScale 2.0
+                        // он больше не закрывает значок. Число озвучивается через подпись пункта.
+                        val fixed = with(LocalDensity.current) { 10.dp.toSp() }
                         Box(
                             Modifier
                                 .align(Alignment.TopEnd)
+                                .offset(x = 10.dp, y = (-4).dp)
                                 .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
                                 .clip(CircleShape)
-                                .background(c.bad),
+                                .background(c.bad)
+                                .padding(horizontal = 3.dp)
+                                .testTag("$tag.Badge"),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(badge, style = Zapara.typography.caption, color = c.onBad, maxLines = 1)
+                            Text(badge, style = Zapara.typography.caption.copy(fontSize = fixed, lineHeight = fixed),
+                                color = c.onBad, maxLines = 1)
                         }
                     } else if (dot) {
                         Box(
@@ -265,10 +275,15 @@ private fun BarItem(
                         )
                     }
                 }
-                if (!iconOnly) Text(
+                val caption = Zapara.typography.caption
+                Text(
                     label,
-                    style = Zapara.typography.caption,
-                    color = if (active) c.text1 else c.text3
+                    style = if (labelScale == 1f) caption else caption.copy(fontSize = caption.fontSize * labelScale,
+                        lineHeight = caption.lineHeight * labelScale),
+                    color = if (active) c.text1 else c.text3,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.testTag("$tag.Label")
                 )
             }
             if (inline) Row(Modifier.fillMaxWidth().padding(top = Zapara.space.s, bottom = Zapara.space.l),

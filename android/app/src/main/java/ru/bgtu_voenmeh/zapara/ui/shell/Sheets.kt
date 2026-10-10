@@ -88,6 +88,7 @@ private fun SectionCard(section: Section, active: Boolean, onClick: () -> Unit) 
         Modifier
             .fillMaxWidth()
             .testTag(section.tag)
+            .heightIn(min = Zapara.space.minTouch) // #105 / AN-18
             .semantics { selected = active }
             .clickable(role = Role.Button, onClick = onClick)
     ) {
@@ -193,6 +194,7 @@ fun GroupPickerSheet(
                     Modifier
                         .fillMaxWidth()
                         .testTag("Picker.Row.${group.id}")
+                        .heightIn(min = Zapara.space.minTouch) // #105 / AN-19
                         .semantics { selected = group.id == currentId }
                         .clickable(enabled = !busy, role = Role.Button) { onPick(group.id) }
                 ) {
