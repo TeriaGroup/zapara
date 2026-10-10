@@ -100,7 +100,8 @@
               <TextBlock Classes="subject" Text="{Binding DisplayName}" TextWrapping="Wrap" />
               <TextBlock Classes="muted caption" Text="{Binding TeacherLine}" TextWrapping="Wrap" />
             </StackPanel>
-            <Border Grid.Column="2" Classes="chip room" VerticalAlignment="Center">
+            <Border Grid.Column="2" Classes="chip room" VerticalAlignment="Center"
+                    IsVisible="{Binding RoomText, Converter={x:Static loc:RoomChip.Visible}}">
               <TextBlock Classes="tnum" Text="{Binding RoomText}" />
             </Border>
           </Grid>

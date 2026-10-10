@@ -25,7 +25,7 @@ public sealed partial class LessonRowViewModel : ObservableObject
     {
         Row=row;
         RefreshRelated(row);
-        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(CanOpenTeacher),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(HasType),nameof(IsLectureType),nameof(IsPracticeType),nameof(IsLabType),nameof(IsConsultType),nameof(IsCreditType),nameof(IsExamType),nameof(IsCourseType),nameof(IsPast),nameof(IsNext),nameof(IsUpcoming),nameof(CanShowMap),nameof(PriorityCaption)})OnPropertyChanged(name);
+        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(CanOpenTeacher),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(HasType),nameof(IsLectureType),nameof(IsPracticeType),nameof(IsLabType),nameof(IsConsultType),nameof(IsCreditType),nameof(IsExamType),nameof(IsCourseType),nameof(IsPast),nameof(IsNext),nameof(IsUpcoming),nameof(CanShowMap),nameof(PriorityCaption),nameof(ShowInlineMap)})OnPropertyChanged(name);
     }
     private void RefreshRelated(LessonRow row)
     {
@@ -47,9 +47,18 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public string PriorityCaption => IsNext ? Owner.DayPriorityCaption : "";
     [ObservableProperty] private bool showDetails;
     public bool ShowHomeworkDetails => ShowDetails && HasHomework;
-    public string DetailsCaption => ShowDetails ? "Свернуть" : "Подробнее";
-    partial void OnShowDetailsChanged(bool value){OnPropertyChanged(nameof(ShowHomeworkDetails));OnPropertyChanged(nameof(DetailsCaption));}
-    [RelayCommand] private void ToggleDetails()=>ShowDetails=!ShowDetails;
+    partial void OnShowDetailsChanged(bool value)=>OnPropertyChanged(nameof(ShowHomeworkDetails));
+    /// <summary>#9 (G-2): действия пары — в листе, который открывает нажатие на карточку или «⋯», как лист пары на web.
+    /// На закрытой карточке остаётся не больше одного действия: «Карта» у текущей/следующей пары.</summary>
+    [ObservableProperty] private bool isSheetOpen;
+    /// <remarks>Подробности открываются вместе с листом и закрываются вместе с ним; закрытая карточка возвращается к виду
+    /// по умолчанию (подробности только у ближайшей пары).</remarks>
+    partial void OnIsSheetOpenChanged(bool value){OnPropertyChanged(nameof(ShowInlineMap));ShowDetails=value||IsNext;}
+    public bool ShowInlineMap => IsNext && !IsSheetOpen;
+    [RelayCommand] private void ToggleSheet()=>IsSheetOpen=!IsSheetOpen;
+    /// <summary>R2-07 / G-2: переход к паре (из «Недели», поиска, «К ближайшей паре», пересечений) раскрывает её лист —
+    /// там теперь действия. Значение по умолчанию (подробности у ближайшей пары) лист не открывает, одинаково в обеих темах.</summary>
+    public void Reveal(){ShowDetails=true;IsSheetOpen=true;}
     /// <summary>#19: карточка «Сейчас / Следующая пара» под заголовком раскрывает эту пару в списке.</summary>
     [RelayCommand] private void FocusInDay() => _owner.JumpNearestLessonCommand.Execute(null);
     public int Index { get; }

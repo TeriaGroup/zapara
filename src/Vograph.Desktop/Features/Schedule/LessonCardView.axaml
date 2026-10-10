@@ -5,9 +5,14 @@
              xmlns:s="using:Vograph.Desktop.Features.Schedule"
              x:Class="Vograph.Desktop.Features.Schedule.LessonCardView"
              x:DataType="s:LessonRowViewModel">
-  <Border Classes="card hoverable" Classes.next="{Binding IsNext}" Classes.past="{Binding IsPast}"
-          c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
+  <Border Name="Card" Classes="card hoverable" Classes.next="{Binding IsNext}" Classes.past="{Binding IsPast}"
+          c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}" Cursor="Hand">
     <Grid ColumnDefinitions="64,*" RowDefinitions="Auto,Auto,Auto">
+      <Button Grid.Column="1" Classes="ghost icon" HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="1"
+              Classes.on="{Binding IsSheetOpen}" Command="{Binding ToggleSheetCommand}"
+              ToolTip.Tip="Действия с парой" AutomationProperties.Name="Действия с парой" AutomationProperties.AutomationId="Lesson.More">
+        <c:Icon Data="{StaticResource Icon.More}" Size="14" />
+      </Button>
 
       <!-- time column -->
       <StackPanel>
@@ -17,7 +22,7 @@
       </StackPanel>
 
       <!-- subject, teacher, note, homework -->
-      <StackPanel Grid.Column="1" Margin="12,0">
+      <StackPanel Grid.Column="1" Margin="12,0,44,0">
         <TextBlock Text="Пересечение времени занятий" IsVisible="{Binding HasConflict}" Classes="muted caption" />
         <TextBlock Classes="muted caption" Text="{Binding PriorityCaption}" IsVisible="{Binding IsNext}" />
         <WrapPanel>
@@ -100,14 +105,30 @@
       </StackPanel>
 
       <WrapPanel Grid.Row="1" Grid.Column="1" Margin="12,6,0,0" ItemSpacing="6"><TextBlock Text="{Binding RoomText}" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding BuildingTag}" IsVisible="{Binding HasBuildingTag}" /></WrapPanel>
-      <WrapPanel Grid.Row="2" Grid.ColumnSpan="2" ItemSpacing="8" LineSpacing="6" Margin="0,10,0,0">
-        <Button Classes="primary" Content="{loc:T openMap}" Command="{Binding ShowMapCommand}" IsEnabled="{Binding CanShowMap}" ToolTip.Tip="{loc:T mapTip}" AutomationProperties.AutomationId="Lesson.Map" />
-        <Button Classes="secondary" Content="Домашка" Command="{Binding OpenHomeworksCommand}" AutomationProperties.AutomationId="Lesson.Homework" />
-        <Button Classes="ghost" Content="{loc:T discussInGroupChat}" Command="{Binding DiscussCommand}" />
-        <Button Classes="ghost" Content="{Binding DetailsCaption}" Command="{Binding ToggleDetailsCommand}" />
-        <Button Classes="ghost" Content="Добавить задание" Command="{Binding AddHomeworkCommand}" IsVisible="{Binding ShowDetails}" />
-        <Button Classes="ghost" Content="Переименовать" Command="{Binding RenameCommand}" IsVisible="{Binding ShowDetails}" AutomationProperties.AutomationId="Lesson.Rename" />
-      </WrapPanel>
+      <!-- #9 (G-2): закрытая карточка — максимум одно действие («Карта» у текущей/следующей пары); остальное — в листе пары. -->
+      <Button Grid.Row="2" Grid.ColumnSpan="2" Classes="primary" Margin="0,10,0,0" HorizontalAlignment="Left"
+              Content="{loc:T openMap}" Command="{Binding ShowMapCommand}" IsEnabled="{Binding CanShowMap}" ToolTip.Tip="{loc:T mapTip}"
+              IsVisible="{Binding ShowInlineMap}" AutomationProperties.AutomationId="Lesson.InlineMap" />
+      <!-- Лист пары: тот же набор, что в LessonSheet на web (Карта · Домашка · Обсудить в чате группы), плюс действия desktop. -->
+      <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="lessonsheet" Margin="0,10,0,0" IsVisible="{Binding IsSheetOpen}"
+              AutomationProperties.AutomationId="Lesson.Sheet">
+        <WrapPanel ItemSpacing="8" LineSpacing="6">
+          <Button Classes="primary" Content="{loc:T openMap}" Command="{Binding ShowMapCommand}" IsEnabled="{Binding CanShowMap}" ToolTip.Tip="{loc:T mapTip}" AutomationProperties.AutomationId="Lesson.Map" />
+          <Button Classes="secondary" Content="Домашка" Command="{Binding OpenHomeworksCommand}" AutomationProperties.AutomationId="Lesson.Homework" />
+          <Button Classes="ghost" Content="{loc:T discussInGroupChat}" Command="{Binding DiscussCommand}" />
+          <!-- R2-07 / G-2: в листе три действия, как LessonSheet на web; редкие — в «⋯». «Подробнее» не нужен:
+               открытый лист сам показывает преподавателя и домашку (OnIsSheetOpenChanged). -->
+          <Button Classes="ghost icon" Content="⋯" ToolTip.Tip="Ещё" AutomationProperties.Name="Ещё действия с парой"
+                  AutomationProperties.AutomationId="Lesson.SheetMore">
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                <MenuItem Header="Добавить задание" Command="{Binding AddHomeworkCommand}" AutomationProperties.AutomationId="Lesson.AddHomework" />
+                <MenuItem Header="Переименовать" Command="{Binding RenameCommand}" AutomationProperties.AutomationId="Lesson.Rename" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </WrapPanel>
+      </Border>
     </Grid>
   </Border>
 </UserControl>

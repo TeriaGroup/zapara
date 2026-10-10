@@ -16,7 +16,10 @@
 .study-selected-day-caption { display: none; }
 .page-head h1[tabindex="-1"]:focus { outline: none; }
 
+/* R2-14: на ПК «К ближайшей паре» и «К срокам домашки» уже есть в верхней строке (.study-desktop-day-controls) —
+   в блоке «Действия дня» их не дублируем. На телефоне верхней строки нет, ссылки остаются в «Действиях дня». */
 @media (min-width: 960px) {
+  .study-day-action-links { display: none; }
   .day-page .page-head .study-mobile-week { display: none; }
 }
 

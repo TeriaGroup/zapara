@@ -39,6 +39,8 @@
   --zp-danger-soft: #ef5b6b24;
   --zp-warning: #f2a33c;
   --zp-warning-soft: #f2a33c24;
+  --zp-warning-text: #f2a33c;
+  --zp-warning-surface: #362b1c;
   --zp-success: #4cc38a;
   --zp-info: #5aa9ff;
   --zp-selection: #ffffff14;
@@ -69,6 +71,8 @@
   --zp-danger-soft: #c534441f;
   --zp-warning: #b26a0f;
   --zp-warning-soft: #b26a0f1f;
+  --zp-warning-text: #8a5300;
+  --zp-warning-surface: #fff2d6;
   --zp-success: #1f8a56;
   --zp-info: #2272c3;
   --zp-selection: #0000000d;

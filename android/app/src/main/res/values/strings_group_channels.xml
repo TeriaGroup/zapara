@@ -20,7 +20,6 @@
     <string name="channel_people_search_hint">Имя или логин</string>
     <string name="channel_people_empty">Участник не найден</string>
     <string name="group_refresh">Обновить</string>
-    <string name="channel_ballot_count">Голосования · %1$d активных</string>
     <string name="channel_no_messages">Сообщений пока нет</string>
     <string name="channel_edit">Изменить</string>
     <string name="channel_delete">Удалить</string>

@@ -174,11 +174,13 @@
     <Setter Property="FontSize" Value="10.5" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
   </Style>
+  <!-- R2-01 / G-1: предупреждение — общая пара токенов warning-text на warning-surface (5.70:1 светлая, 6.63:1 тёмная),
+       как в админке; раньше #D9861B на полупрозрачном фоне давал 2.33:1. -->
   <Style Selector="Border.chip.stale.warn">
-    <Setter Property="Background" Value="{DynamicResource Brush.WarnSoft}" />
+    <Setter Property="Background" Value="{DynamicResource Zp.WarningSurface}" />
   </Style>
   <Style Selector="Border.chip.stale.warn TextBlock">
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Warn}" />
+    <Setter Property="Foreground" Value="{DynamicResource Zp.WarningText}" />
   </Style>
 
   <Style Selector="Border.badge">

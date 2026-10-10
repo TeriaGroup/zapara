@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -120,7 +121,8 @@ fun LessonCard(
                         Box(Modifier.size(8.dp).clip(CircleShape).background(c.warn).breath(true))
                     }
                     ZChip(row.label, selected = row.status == "burning" || row.status == "burning_urgent")
-                    ZSwitch(row.done, { if (row.id !in pendingDoneIds) onToggleDone(row.id) }, "Homework.Done.${row.id}")
+                    ZSwitch(row.done, { if (row.id !in pendingDoneIds) onToggleDone(row.id) }, "Homework.Done.${row.id}",
+                        label = stringResource(R.string.hw_done_switch_label, row.text))
                     if (row.id in pendingDoneIds) Text(stringResource(R.string.ux60_saving),
                         style = Zapara.typography.caption, color = c.text2)
                 }
@@ -144,7 +146,7 @@ fun LessonCard(
         FriendStatusRows(lesson.displayFriends, lesson.isUpcoming)
         if (lesson.homework.size > 2) ZChip(
             if (expanded) stringResource(R.string.ux30_study_hide_homework)
-            else stringResource(R.string.ux30_study_show_more_homework, lesson.homework.size - 2),
+            else pluralStringResource(R.plurals.ux30_study_show_more_homework, lesson.homework.size - 2, lesson.homework.size - 2),
             onClick = { expanded = !expanded }, tag = "Lesson.HomeworkExpand.${lesson.index}")
         actions?.invoke(this)
     }

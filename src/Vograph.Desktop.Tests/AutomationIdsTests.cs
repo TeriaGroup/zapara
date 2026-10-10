@@ -63,14 +63,14 @@ public class AutomationIdsTests : UiTest
         "Nav.Schedule", "Nav.Week", "Nav.Summary", "Nav.Teachers", "Nav.Maps", "Nav.Friends", "Nav.Homework", "Nav.Community", "Nav.Settings",
         "Schedule.Title", "Schedule.Subtitle", "Schedule.Prev", "Schedule.Next", "Schedule.Today", "Schedule.Search", "Schedule.More", "Schedule.Hero",
         "ScheduleSegment.0", "ScheduleSegment.1", "ScheduleSegment.2",
-        "Lesson.Title", "Lesson.Rename", "Lesson.Homework", "Lesson.Map", "Lesson.Hw",
+        "Lesson.Title", "Lesson.Rename", "Lesson.Homework", "Lesson.Map", "Lesson.Hw", "Lesson.More", "Lesson.InlineMap", "Lesson.Sheet", "Lesson.SheetMore", "Lesson.AddHomework",
         "Week.Prev", "Week.Title", "Week.Next", "Week.Today", "Week.Search", "Week.More", "Week.Day",
         "Summary.Total", "SummarySegment.0", "SummarySegment.1", "SummarySegment.2",
         "Teachers.Search", "Teachers.OnlyMine", "Teachers.List", "Teachers.Retry",
         "Maps.ToNext", "MapsBuilding.0", "MapsBuilding.1", "Maps.Floor", "Maps.ZoomIn", "Maps.ZoomOut", "Maps.Fit",
         "Maps.Reset", "Maps.Fullscreen", "Maps.More", "Maps.Plan", "MapsFull.Close", "MapsFull.ZoomIn",
         "Friends.Add", "Friend.Color", "Friend.Names", "Friend.Enabled", "Friend.Remove", "Friends.Strictness", "Friends.AlwaysAll",
-        "Homework.Add", "Homework.Done", "Homework.Edit", "Homework.Delete",
+        "Homework.Add", "Homework.Done", "Homework.Edit", "Homework.Delete", "HomeworkRow.More", "HomeworkRow.Sheet",
         "Settings.Category.Account", "Settings.Category.Study", "Settings.Category.Appearance",
         "Settings.Category.Notifications", "Settings.Category.Data", "Settings.Category.Help", "Settings.Back",
         "SettingsTheme.0", "SettingsTheme.1", "SettingsTheme.2", "Account.Card", "Account.Status", "Account.Login",
@@ -138,6 +138,16 @@ public class AutomationIdsTests : UiTest
             await Waits.Until(() => loaded[key](vm), $"section {key} loaded");
             Pump();
             ids.UnionWith(Ids(window));
+            if (key == SectionKey.Schedule)
+            {
+                // R2-07: «Добавить задание» и «Переименовать» — в меню «⋯» листа пары; меню живёт во flyout, его открываем.
+                var more = window.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetAutomationId(b) == "Lesson.SheetMore");
+                more.Flyout!.ShowAt(more);
+                Pump();
+                ids.UnionWith(((MenuFlyout)more.Flyout).Items.OfType<MenuItem>().Select(Avalonia.Automation.AutomationProperties.GetAutomationId).OfType<string>());
+                more.Flyout.Hide();
+                Pump();
+            }
             if (key == SectionKey.Settings)
             {
                 var settings = (Features.Preferences.SettingsViewModel)vm;

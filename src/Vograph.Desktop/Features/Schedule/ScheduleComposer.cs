@@ -38,7 +38,7 @@ public sealed class ScheduleComposer
         var breaks = DayPlanning.FreeTime(intervals);
         var summary = day.IsUnavailable || day.Rows.Count == 0 ? "" : $"Занятия {intervals.Min(row => row.Start):hh\\:mm}–{intervals.Max(row => row.End):hh\\:mm}";
         var copy = new TimetableApiCache(_app.Db).Read(GroupId??"")?.FetchedAt ?? _app.Settings.LastFetchedAt;
-        var source = DateTimeOffset.TryParse(copy,out var stamp) ? $"Копия {stamp.ToLocalTime():dd.MM.yyyy HH:mm}" : "Локальное расписание";
+        var source = DateTimeOffset.TryParse(copy,out var stamp) ? $"Расписание от {Vograph.Desktop.Shell.GroupCardLogic.CopyDate(stamp.LocalDateTime)}, {stamp.ToLocalTime():HH:mm}" : "Локальное расписание"; // R2-01: не «Копия 21.09.2026 21:14»
         if(!_app.AllowNetwork || _app.Api.LastFailure==Vograph.Core.Models.TimetableApiFailure.Transport)source="Нет сети · "+source;
         else if(_app.Api.LastError is not null)source="Обновление не удалось · "+source;
         return day with { Dates = dates, Breaks = breaks, Summary = summary, SourceSummary=source };

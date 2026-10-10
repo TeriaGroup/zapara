@@ -59,4 +59,31 @@ public class MapsParityTests : UiTest
         window.Close();
         AssertNoBindingErrors();
     }
+
+    [AvaloniaFact]
+    public async Task Lists_are_not_cut_by_the_header_scroller_and_sit_above_the_map()
+    {
+        // R2-04: «Места на этом этаже» и «Планы без сети» были внутри шапки (ScrollViewer MaxHeight=240) и обрезались наполовину.
+        var now = new DateTime(2026, 9, 14, 9, 30, 0);
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        db.Services.MapFiles = new FakeMapFiles(Path.Combine(db.Dir, "maps"), ("ГК", 4));
+        var shell = new ShellViewModel(db.Services) { Clock = () => now };
+        shell.Register(SectionKey.Maps, () => new MapsViewModel(db.Services, shell, () => now));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell, Width = 1440, Height = 900 };
+        window.Show();
+        SetTheme(ThemeVariant.Light, db.Services.Theme);
+        shell.NavigateTo(SectionKey.Maps);
+        Pump(); await Task.Delay(500); Pump();
+        var maps = window.GetVisualDescendants().OfType<MapsView>().Single();
+        var offline = maps.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Планы без сети"));
+        Assert.DoesNotContain(offline.GetVisualAncestors().TakeWhile(a => a != maps), a => a is ScrollViewer);
+        var card = maps.GetVisualDescendants().OfType<Border>().First(b => b.Classes.Contains("card") && b.ClipToBounds);
+        var listBottom = offline.TranslatePoint(new Point(0, offline.Bounds.Height), maps)!.Value.Y;
+        var cardTop = card.TranslatePoint(new Point(0, 0), maps)!.Value.Y;
+        Assert.True(listBottom <= cardTop, $"list bottom {listBottom:0} > map top {cardTop:0}");
+        window.Close();
+        AssertNoBindingErrors();
+    }
 }

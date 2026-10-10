@@ -189,7 +189,7 @@ private fun SettingsOverview(state: SettingsUiState, account: AccountUiState,
             }
         }
         if ("account" in visible) item {
-            SettingsOverviewRow(R.drawable.ic_users, stringResource(R.string.account_title),
+            SettingsOverviewRow(R.drawable.ic_user, stringResource(R.string.account_title),
                 if (account.guest) stringResource(R.string.settings_overview_guest)
                 else account.accountName.ifBlank { stringResource(R.string.account_title) },
                 "Settings.Overview.Account", emphasized = true) { onOpen("account") }
@@ -210,7 +210,7 @@ private fun SettingsOverview(state: SettingsUiState, account: AccountUiState,
                 if ("appearance" in visible) SettingsOverviewRow(R.drawable.ic_sun, stringResource(R.string.theme_appearance),
                     listOf(stringResource(R.string.theme_system), stringResource(R.string.theme_light), stringResource(R.string.theme_dark))[state.theme.ordinal],
                     "Settings.Overview.Appearance") { onOpen("appearance") }
-                if ("notifications" in visible) SettingsOverviewRow(R.drawable.ic_notification, stringResource(R.string.settings_notify),
+                if ("notifications" in visible) SettingsOverviewRow(R.drawable.ic_bell, stringResource(R.string.settings_notify),
                     if (state.notifyEnabled) stringResource(R.string.settings_overview_notify_on,
                         state.savedTime1, state.savedTime2)
                     else stringResource(R.string.settings_overview_notify_off),
@@ -393,7 +393,7 @@ fun SettingsSection(
                 else Text(uiText(R.string.space_day_159), style = Zapara.typography.body)
                 if (!state.signedIn) ZActionButton(stringResource(R.string.ux100_platform_open_account),
                     { returnSection = "data"; section = "account" }, tag = "Settings.DataOpenAccount",
-                    leadingIcon = R.drawable.ic_users)
+                    leadingIcon = R.drawable.ic_user)
                 Text(uiText(R.string.space_day_160), style = Zapara.typography.caption)
                 Text(state.groupUpdated, style = Zapara.typography.caption)
                 if (state.signedIn) {
@@ -403,7 +403,7 @@ fun SettingsSection(
                     if (state.cloudSync.failure == PrivateSyncState.NeedsReauthentication)
                         ZActionButton(stringResource(R.string.ux60_sync_open_account),
                             { returnSection = "data"; section = "account" },
-                            tag = "Settings.SyncReauthenticate", leadingIcon = R.drawable.ic_users)
+                            tag = "Settings.SyncReauthenticate", leadingIcon = R.drawable.ic_user)
                 }
             } }
             if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
@@ -588,12 +588,12 @@ fun SettingsSection(
                         Text(stringResource(R.string.settings_perm_notify), style = Zapara.typography.caption, color = c.warn)
                         ZActionButton(stringResource(R.string.settings_open_notify), {
                             ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
-                        }, leadingIcon = R.drawable.ic_notification)
+                        }, leadingIcon = R.drawable.ic_bell)
                     } else if (state.exactAlarmMissing) {
                         Text(stringResource(R.string.settings_perm_alarm), style = Zapara.typography.caption, color = c.warn)
                         ZActionButton(stringResource(R.string.settings_open_alarm), {
                             ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
-                        }, leadingIcon = R.drawable.ic_notification)
+                        }, leadingIcon = R.drawable.ic_bell)
                     }
                 }
             }
@@ -660,7 +660,7 @@ private fun NotificationPreview(title: String, time: String, text: String) {
         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            Icon(painterResource(R.drawable.ic_notification), contentDescription = null, tint = c.text1, modifier = Modifier.size(20.dp))
+            Icon(painterResource(R.drawable.ic_bell), contentDescription = null, tint = c.text1, modifier = Modifier.size(20.dp))
             Text(title, modifier = Modifier.weight(1f), style = Zapara.typography.bodyStrong, color = c.text1)
             Text(time, style = Zapara.typography.caption, color = c.text2)
         }
@@ -913,7 +913,7 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
         Text(stringResource(if (state.signedIn) R.string.ux100_platform_support_signed_in_hint
             else R.string.settings_report_hint), style = Zapara.typography.caption, color = c.text2)
         if (open && !state.signedIn) ZActionButton(stringResource(R.string.ux100_platform_open_account),
-            onOpenAccount, tag = "Settings.SupportOpenAccount", leadingIcon = R.drawable.ic_users)
+            onOpenAccount, tag = "Settings.SupportOpenAccount", leadingIcon = R.drawable.ic_user)
         if (open && state.signedIn) {
             val inputStatus = SupportInputLimits.evaluate(subject, body, state.selectedSupportThreadId != null)
             if (confirmDiscardDraft) AlertDialog(
