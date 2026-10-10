@@ -72,7 +72,7 @@ SDK и интерпретаторы ставят сами задания: `actio
 `actions/setup-node` (Node 24), `actions/setup-java` (JDK 17, Temurin) и `gradle/actions/setup-gradle` (`cache-provider: basic` —
 открытый кэш на GitHub Actions cache; по умолчанию там коммерческий сервис). Android SDK задание `android` ставит без `sudo` в
 `$RUNNER_TEMP/android-sdk`: command-line tools 23.0 (архив сверяется по SHA-256), `platforms;android-34`, `build-tools;34.0.0`;
-Gradle home — `$RUNNER_TEMP/gradle-home`. PHP задания не ставят: у пользователя раннера нет `sudo`, а `setup-php` ставит PHP через `apt`.
+Gradle home — `$RUNNER_TEMP/gradle-home`; его не удаляет шаг очистки: `setup-gradle` сохраняет его в кэш в своём post-шаге, уже после очистки (сам `RUNNER_TEMP` раннер чистит после задания). Кэш пишут `push` в `develop` и `master` (по умолчанию — только ветка по умолчанию, `master`), PR его только читают. PHP задания не ставят: у пользователя раннера нет `sudo`, а `setup-php` ставит PHP через `apt`.
 Предустановить нужно:
 
 - Linux x64, Ubuntu или Debian;
@@ -90,7 +90,7 @@ Gradle home — `$RUNNER_TEMP/gradle-home`. PHP задания не ставят
 Контейнеры помечены `zapara-ci=1` и названы `zapara-ci-pg-<run_id>-<attempt>-<job>`; если задание убито вместе с раннером,
 остатки можно найти командой `docker ps -a --filter label=zapara-ci=1`. Данные PostgreSQL лежат в tmpfs и на диск не попадают.
 Кэши пакетов (`~/.nuget/packages`, кэш npm и Composer) остаются между запусками; секретов в них нет. Задание `android` в конце
-удаляет свой SDK и Gradle home из `$RUNNER_TEMP`; зависимости Gradle между запусками приходят из кэша GitHub Actions.
+удаляет свой SDK из `$RUNNER_TEMP`; зависимости Gradle между запусками приходят из кэша GitHub Actions.
 
 Тесты desktop идут с `TMPDIR=$RUNNER_TEMP`: часть тестов создаёт каталоги в `/tmp/opencode`, а на общем раннере такой каталог может принадлежать другому пользователю.
 
