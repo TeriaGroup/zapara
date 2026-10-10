@@ -27,7 +27,7 @@ class CommunityPeopleTest {
     @Test fun section_never_prints_user_id() {
         val section = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/communities/CommunitiesSection.kt").readText()
         assertFalse(Regex("Text\\([^)]*userId").containsMatchIn(section))
-        assertTrue(section.contains("stringResource(R.string.community_person_unnamed, CommunityPeople.stableNumber(userId))"))
+        assertTrue(section.contains("val shown = name ?: stringResource(R.string.community_person_unnamed, CommunityPeople.stableNumber(userId))"))
         assertTrue(File("src/main/res/values/strings_community_people.xml").readText().contains(">Участник №%1\$d<"))
     }
 
