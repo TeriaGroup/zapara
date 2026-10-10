@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\MoscowTime;
 use App\Filament\Concerns\GuardsPlatformAdmin;
 use App\Models\AdminAudit;
 use App\Support\AuditDictionary;
@@ -97,8 +98,7 @@ class AuditLog extends Page implements HasTable
             ->columns([
                 TextColumn::make('created_at')
                     ->label('Когда (МСК)')
-                    ->dateTime('j M, H:i', 'Europe/Moscow')
-                    ->description(fn (AdminAudit $record): string => $record->created_at?->timezone('Europe/Moscow')->format('Y') !== now('Europe/Moscow')->format('Y') ? $record->created_at->timezone('Europe/Moscow')->format('Y') : '')
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state)) // G-3: «9 окт., 18:49», год — если не текущий
                     ->sortable(),
                 TextColumn::make('actor.username')
                     ->label('Кто')

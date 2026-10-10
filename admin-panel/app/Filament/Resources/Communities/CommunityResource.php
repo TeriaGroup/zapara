@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Communities;
 
+use App\Filament\Support\MoscowTime;
 use App\Filament\Resources\Communities\Pages\ListCommunities;
 use App\Filament\Resources\Communities\Pages\ViewCommunity;
 use App\Filament\Resources\Communities\RelationManagers\GroupsRelationManager;
@@ -84,8 +85,7 @@ class CommunityResource extends Resource
                     TextEntry::make('description')->label('Описание')->placeholder('Нет описания'),
                     TextEntry::make('created_at')
                         ->label('Создано')
-                        ->dateTime('j F Y, H:i', 'Europe/Moscow')
-                        ->suffix(' МСК'),
+                        ->formatStateUsing(fn ($state): string => MoscowTime::dateTime($state)), // G-3: «9 окт., 18:49 МСК»
                     TextEntry::make('community_id')
                         ->label('ID')
                         ->copyable()
@@ -117,7 +117,7 @@ class CommunityResource extends Resource
                     ->numeric(),
                 TextColumn::make('created_at')
                     ->label('Создано')
-                    ->dateTime('j M Y', 'Europe/Moscow')
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state, time: false)) // G-3: «9 окт.», год — если не текущий
                     ->sortable()
                     ->visibleFrom('md'),
             ])
