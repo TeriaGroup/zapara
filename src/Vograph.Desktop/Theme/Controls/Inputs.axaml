@@ -132,4 +132,8 @@
     <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.5" /></Style>
   </ControlTheme>
 
+  <!-- #21: Typography задаёт CheckBox MinHeight 48, а квадрат Fluent лежит в сетке высотой CheckBoxMinHeight (32) у верхнего края —
+       без этого квадрат на 8 px выше подписи и соседних полей фильтра. -->
+  <x:Double x:Key="CheckBoxMinHeight">48</x:Double>
+
 </ResourceDictionary>

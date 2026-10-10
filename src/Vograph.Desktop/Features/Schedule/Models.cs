@@ -34,4 +34,4 @@ public sealed record LessonRow(
 public sealed record PlannerDate(DateTime Date, int? LessonCount);
 
 public sealed record DayModel(DateTime Date, int Offset, string Title, string Subtitle, IReadOnlyList<LessonRow> Rows, string? EmptyTitle, string? EmptyHint, bool IsUnavailable = false,
-    IReadOnlyList<PlannerDate>? Dates = null, IReadOnlyList<Zapara.Client.Domain.FreeTimeInterval>? Breaks = null, string? Summary = null, DateTime? NextStudyDate = null, string SourceSummary = "");
+    IReadOnlyList<PlannerDate>? Dates = null, IReadOnlyList<Zapara.Client.Domain.FreeTimeInterval>? Breaks = null, string? Summary = null, DateTime? NextStudyDate = null, string SourceSummary = "", bool NeedsGroup = false);

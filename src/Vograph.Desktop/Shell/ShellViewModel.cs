@@ -234,6 +234,8 @@ public sealed partial class ShellViewModel : ViewModelBase
     [ObservableProperty] private string _groupSubtitle = "";
 
     [ObservableProperty] private string _groupRailLabel = "—";
+    /// <summary>#21: группа не выбрана — карточка в сайдбаре зовёт «Выберите группу ›».</summary>
+    [ObservableProperty] private bool _noGroupChosen;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStale), nameof(ShowStaleChip), nameof(ShowStaleDot), nameof(GroupCardTip))]
@@ -671,9 +673,11 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         var data = await RunAsync(() => new PickerData(App.Db.GetAllGroups(), App.Db.GetSettings().MyGroupId), "groups");
         if (data is null) return;
-        var dlg = new GroupPickerDialogViewModel(data.Groups, data.CurrentId);
+        var dlg = new GroupPickerDialogViewModel(data.Groups, data.CurrentId, recentIds: App.Prefs.RecentGroupIds);
         if (!await Dialogs.ShowAsync(dlg) || dlg.Selected is null) return;
         var chosen = dlg.Selected;
+        App.Prefs.RememberGroup(chosen.Id, GroupPickerDialogViewModel.RecentLimit);
+        App.Prefs.Save();
         var saved = await RunAsync(() =>
         {
             var s = App.Db.GetSettings();
@@ -727,8 +731,9 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (group is null)
         {
             GroupName = T("noGroup");
-            GroupSubtitle = T("noGroupHint");
+            GroupSubtitle = T("noGroupCard");
             GroupRailLabel = "—";
+            NoGroupChosen = true;
             return;
         }
         // The shell's injected clock, not the machine's: the card is the one place that still read DateTime
@@ -740,6 +745,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         var culture = CultureInfo.GetCultureInfo("ru-RU");
         GroupName = group.Name;
         GroupRailLabel = GroupCardLogic.RailLabel(group.Name);
+        NoGroupChosen = false;
         GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {today.ToString("d MMM", culture)}";
         // LastFetchedAt is stored in UTC and Stale compares against UTC; the default clock is DateTime.Now, so
         // this is the same instant it always was, only sourced from the clock a test can pin.

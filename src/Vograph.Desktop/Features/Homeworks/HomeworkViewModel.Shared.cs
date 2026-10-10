@@ -31,7 +31,7 @@ public sealed partial class HomeworkViewModel
     partial void OnSharedLoadingChanged(bool value) => NotifySharedTasks();
     private void NotifySharedTasks()
     {
-        foreach (var name in new[] { nameof(ShowSharedTasks), nameof(ShowVisibleSharedSection), nameof(VisibleSharedTasks), nameof(SharedEmpty), nameof(SharedSummary), nameof(HasBrowseFilters), nameof(ShowBrowseEmpty), nameof(BrowseEmptyTitle), nameof(BrowseEmptyHint), nameof(BrowseSummary) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(ShowSharedTasks), nameof(ShowVisibleSharedSection), nameof(VisibleSharedTasks), nameof(SharedEmpty), nameof(SharedSummary), nameof(HasBrowseFilters), nameof(ShowBrowseEmpty), nameof(BrowseEmptyTitle), nameof(BrowseEmptyAction), nameof(BrowseEmptyCommand), nameof(BrowseEmptyHint), nameof(BrowseSummary) }) OnPropertyChanged(name);
     }
     private void ResetSharedScope()
     {

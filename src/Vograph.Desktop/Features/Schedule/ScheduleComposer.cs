@@ -52,7 +52,7 @@ public sealed class ScheduleComposer
         var title = DayTitles.Title(offset, date, loc);
 
         if (string.IsNullOrEmpty(GroupId))
-            return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(), loc.T("noGroup"), loc.T("noGroupHint"));
+            return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(), loc.T("noGroup"), loc.T("noGroupHint"), NeedsGroup: true);
 
         var groupId = GroupId!;
         if(DateTime.TryParse(settings.PeriodStart,out var knownStart) && date.Date<knownStart.Date)

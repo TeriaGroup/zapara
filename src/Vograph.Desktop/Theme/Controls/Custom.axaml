@@ -104,6 +104,10 @@
           <TextBlock Text="{TemplateBinding Title}" Foreground="{DynamicResource Zp.TextPrimary}" FontSize="{DynamicResource Zp.Font.Body}" TextAlignment="Center" TextWrapping="Wrap" />
           <TextBlock Text="{TemplateBinding Hint}" Foreground="{DynamicResource Zp.TextSecondary}" FontSize="{DynamicResource Zp.Font.Secondary}" TextAlignment="Center" TextWrapping="Wrap"
                      IsVisible="{TemplateBinding Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <Button x:Name="PART_Action" Classes="primary" Content="{TemplateBinding ActionText}" Command="{TemplateBinding Command}"
+                  CommandParameter="{TemplateBinding CommandParameter}" HorizontalAlignment="Center" Margin="0,8,0,0"
+                  AutomationProperties.AutomationId="{TemplateBinding ActionAutomationId}"
+                  IsVisible="{TemplateBinding ActionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
       </ControlTemplate>
     </Setter>
