@@ -65,10 +65,10 @@ SDK и интерпретаторы ставят сами задания: `actio
 Предустановить нужно:
 
 - Linux x64, Ubuntu или Debian (setup-php на собственном раннере поддерживает только их);
-- `sudo` без пароля для пользователя раннера: setup-php ставит PHP и расширения через `apt`;
+- `sudo` без пароля для пользователя раннера: setup-php ставит PHP и расширения через `apt` (без этого задание `admin` падает на setup-php через 10 минут);
 - Docker Engine, пользователь раннера в группе `docker`; образ `postgres:16-alpine` скачивается при первом запуске;
 - `git`, `curl`, `openssl`, `tar`, `xz-utils`, `unzip`;
-- библиотеки для .NET и Avalonia headless: `libicu`, `libssl`, `libfontconfig1` (если `libfontconfig1` нет, задание `desktop` распаковывает её из `.deb` в `$RUNNER_TEMP` без root);
+- библиотеки для .NET и Avalonia headless: `libicu`, `libssl`, `libfontconfig1` и хотя бы один шрифт (если `libfontconfig1` или шрифтов нет, задание `desktop` распаковывает `libfontconfig1` и `fonts-dejavu-core` из `.deb` в `$RUNNER_TEMP` без root);
 - свободные порты `127.0.0.1:56432` и `127.0.0.1:56543`.
 
 Раннер постоянный, поэтому каждое задание в конце (`if: always()`) удаляет свой контейнер вместе с томом

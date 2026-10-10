@@ -240,23 +240,39 @@ jobs:
             8.0.x
             10.0.x
 
-      # libSkiaSharp (Avalonia headless rendering) needs libfontconfig.so.1. The runner user has no sudo, so when
-      # the library is missing it is unpacked from the distribution's .deb into RUNNER_TEMP (no root, nothing
-      # installed system-wide) and put on LD_LIBRARY_PATH for the test step.
-      - name: Native libraries for Avalonia headless
+      # Avalonia headless renders text through libSkiaSharp, which needs libfontconfig.so.1 and at least one
+      # font (otherwise "Default font family name can't be null or empty"). The runner user has no sudo, so
+      # what is missing is unpacked from the distribution's .deb into RUNNER_TEMP (no root, nothing installed
+      # system-wide); LD_LIBRARY_PATH and FONTCONFIG_FILE point the test step at it.
+      - name: Native libraries and fonts for Avalonia headless
         run: |
-          if ldconfig -p | grep -q 'libfontconfig\.so\.1'; then exit 0; fi
           dir="$RUNNER_TEMP/native"
-          rm -rf "$dir" && mkdir -p "$dir/debs" "$dir/root"
+          rm -rf "$dir" && mkdir -p "$dir/debs" "$dir/root" "$dir/cache"
           cd "$dir/debs"
-          apt-get download libfontconfig1
-          for p in libfreetype6 libexpat1 libpng16-16t64 libpng16-16 libbrotli1 fontconfig-config; do
-            dpkg -s "$p" >/dev/null 2>&1 || apt-get download "$p" 2>/dev/null || true
-          done
-          for f in *.deb; do dpkg-deb -x "$f" "$dir/root"; done
-          lib="$(dirname "$(find "$dir/root" -name 'libfontconfig.so.1' | head -n 1)")"
-          echo "LD_LIBRARY_PATH=$lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-          if [ -f "$dir/root/etc/fonts/fonts.conf" ]; then echo "FONTCONFIG_FILE=$dir/root/etc/fonts/fonts.conf" >> "$GITHUB_ENV"; fi
+          if ! ldconfig -p | grep -q 'libfontconfig\.so\.1'; then
+            apt-get download libfontconfig1
+            for p in libfreetype6 libexpat1 libpng16-16t64 libpng16-16 libbrotli1; do
+              dpkg -s "$p" >/dev/null 2>&1 || apt-get download "$p" 2>/dev/null || true
+            done
+          fi
+          if [ -z "$(find /usr/share/fonts /usr/local/share/fonts -type f \( -name '*.ttf' -o -name '*.otf' \) 2>/dev/null | head -n 1)" ]; then
+            apt-get download fonts-dejavu-core
+          fi
+          for f in *.deb; do [ -e "$f" ] && dpkg-deb -x "$f" "$dir/root"; done
+          lib="$(find "$dir/root" -name 'libfontconfig.so.1' | head -n 1)"
+          if [ -n "$lib" ]; then
+            echo "LD_LIBRARY_PATH=$(dirname "$lib")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          fi
+          cat > "$dir/fonts.conf" <<EOF
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+          <fontconfig>
+            <dir>/usr/share/fonts</dir>
+            <dir>$dir/root/usr/share/fonts</dir>
+            <cachedir>$dir/cache</cachedir>
+          </fontconfig>
+          EOF
+          echo "FONTCONFIG_FILE=$dir/fonts.conf" >> "$GITHUB_ENV"
 
       - name: Client library tests
         run: |
