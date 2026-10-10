@@ -1,0 +1,295 @@
+# Tests on the organisation's self-hosted Linux runner. Runner prerequisites and the list of
+# tests excluded on Linux: docs/CI.md.
+name: tests
+
+on:
+  push:
+    branches: [develop, master]
+  pull_request:
+    branches: [develop, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+jobs:
+  server:
+    name: Server (.NET + PostgreSQL)
+    # The repository is public: never run code from forks on the self-hosted runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 45
+    env:
+      PG_CONTAINER: zapara-ci-pg-${{ github.run_id }}-${{ github.run_attempt }}-server
+      # TestPostgresTarget allows only the fixture ports 56432 and 56543; the server job uses 56543.
+      ZAPARA_TEST_POSTGRES_PORT: "56543"
+      # Excluded on Linux (docs/CI.md):
+      # - IngestCliTests.Compiled_*: start "$DOTNET_ROOT_X64/dotnet.exe", Windows only.
+      # - SocialMediaTests.Documents_keep_one_safe_extension: expects a Windows path "C:\temp\..." to be cut to the file name.
+      # - WebSessionTests.ConcurrentRefresh... and three WebPushTests: already fail on develop
+      #   (POST /auth/register answers 403 csrf_invalid), not related to the runner.
+      SERVER_TEST_FILTER: >-
+        FullyQualifiedName!~Zapara.Server.Tests.IngestCliTests.Compiled_&FullyQualifiedName!=Zapara.Server.Tests.SocialMediaTests.Documents_keep_one_safe_extension&FullyQualifiedName!=Zapara.Server.Tests.WebSessionTests.ConcurrentRefreshIsAtomicAndOldTabCannotWriteAsNewUser&FullyQualifiedName!=Zapara.Server.Tests.WebPushTests.BothSyncedTimesDriveDurableClaimsAndNativeRevocationRemovesSubscription&FullyQualifiedName!=Zapara.Server.Tests.WebPushTests.DisablingAndUnsubscribingRemoveProtectedEndpointImmediately&FullyQualifiedName!=Zapara.Server.Tests.WebPushTests.ExpiredProviderSubscriptionIsRemovedAndUnconfiguredTestNeverPretendsSuccess
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: true
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Start PostgreSQL 16
+        run: |
+          docker rm -f -v "$PG_CONTAINER" >/dev/null 2>&1 || true
+          password="$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          docker run -d --name "$PG_CONTAINER" --label zapara-ci=1 \
+            -e POSTGRES_PASSWORD="$password" -e POSTGRES_DB=zapara_test \
+            -p "127.0.0.1:${ZAPARA_TEST_POSTGRES_PORT}:5432" --tmpfs /var/lib/postgresql/data \
+            postgres:16-alpine -c fsync=off -c max_connections=500 >/dev/null
+          for _ in $(seq 1 60); do
+            if docker exec "$PG_CONTAINER" pg_isready -U postgres -d zapara_test >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec "$PG_CONTAINER" pg_isready -U postgres -d zapara_test
+          mkdir -p "$RUNNER_TEMP/restore"
+          {
+            echo "ZAPARA_TEST_POSTGRES=Host=127.0.0.1;Port=${ZAPARA_TEST_POSTGRES_PORT};Database=zapara_test;Username=postgres;Password=${password};Maximum Pool Size=20"
+            echo "ZAPARA_RESTORE_TEST_CONTAINER=$PG_CONTAINER"
+            echo "ZAPARA_RESTORE_TEST_DIRECTORY=$RUNNER_TEMP/restore"
+            echo "DOTNET8=$DOTNET_ROOT/dotnet"
+          } >> "$GITHUB_ENV"
+
+      - name: Build
+        run: dotnet build src/Zapara.Server.Tests -c Debug
+
+      - name: Test
+        run: >-
+          dotnet test src/Zapara.Server.Tests -c Debug --no-build
+          --filter "$SERVER_TEST_FILTER" --logger "console;verbosity=normal"
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f -v "$PG_CONTAINER" >/dev/null 2>&1 || true
+          rm -rf "$RUNNER_TEMP/restore"
+          git reset --hard -q && git clean -ffdxq
+
+  admin:
+    name: Admin panel (PHP)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    env:
+      PG_CONTAINER: zapara-ci-pg-${{ github.run_id }}-${{ github.run_attempt }}-admin
+      # App\Support\Zapara accepts only the fixture port 56432.
+      PG_PORT: "56432"
+      COMPOSER_NO_INTERACTION: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: true
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: 8.0.x
+
+      # setup-php installs PHP with passwordless sudo/apt (docs/CI.md); without it the step would wait, so it is bounded.
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        timeout-minutes: 10
+        env:
+          runner: self-hosted
+        with:
+          php-version: "8.3"
+          extensions: pdo_pgsql, pdo_sqlite, intl, zip, mbstring
+          coverage: none
+          tools: composer:v2
+
+      - name: Start PostgreSQL 16
+        run: |
+          docker rm -f -v "$PG_CONTAINER" >/dev/null 2>&1 || true
+          password="$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          docker run -d --name "$PG_CONTAINER" --label zapara-ci=1 \
+            -e POSTGRES_PASSWORD="$password" -e POSTGRES_DB=zapara_test \
+            -p "127.0.0.1:${PG_PORT}:5432" --tmpfs /var/lib/postgresql/data \
+            postgres:16-alpine -c fsync=off -c max_connections=500 >/dev/null
+          for _ in $(seq 1 60); do
+            if docker exec "$PG_CONTAINER" pg_isready -U postgres -d zapara_test >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec "$PG_CONTAINER" pg_isready -U postgres -d zapara_test
+          app_key="base64:$(openssl rand -base64 32)"
+          echo "::add-mask::$app_key"
+          {
+            echo "ZAPARA_TEST_POSTGRES=Host=127.0.0.1;Port=${PG_PORT};Database=zapara_test;Username=postgres;Password=${password};Maximum Pool Size=20"
+            echo "APP_KEY=$app_key"
+          } >> "$GITHUB_ENV"
+
+      # PanelTest runs "dotnet test" on Zapara.Server.Tests with a 300 s limit per call; build it up front.
+      - name: Build server test helpers
+        run: dotnet build src/Zapara.Server.Tests -c Debug
+
+      - name: Install Composer packages
+        working-directory: admin-panel
+        run: composer install --no-progress --prefer-dist
+
+      - name: php artisan test
+        working-directory: admin-panel
+        run: php artisan test
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f -v "$PG_CONTAINER" >/dev/null 2>&1 || true
+          git reset --hard -q && git clean -ffdxq
+
+  web:
+    name: Frontend (web)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 20
+    env:
+      # Date/time tests format times in the users' zone (Moscow), the runner's clock is UTC.
+      TZ: Europe/Moscow
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: true
+          persist-credentials: false
+
+      # node --test loads the .ts sources directly: Node 24 strips types without flags.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: 8.0.x
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: Unit tests (node --test)
+        working-directory: web
+        run: node --test 'src/**/*.test.ts'
+
+      # The project has no ESLint config; "npm run build" runs tsc --noEmit (strict, noUnused*) before vite build.
+      - name: Type check and build
+        working-directory: web
+        run: npm run build
+
+      # Three Blazor-era checks still expect the old name "Запара" and the old service worker manifest; skipped (docs/CI.md).
+      - name: Browser script tests (node --test)
+        run: >-
+          node --test
+          --test-skip-pattern="push displays only fixed neutral text"
+          --test-skip-pattern="published host-prefixed manifest caches app assets"
+          --test-skip-pattern="manifest cannot cache private or cross-origin URLs"
+          'src/Zapara.Web.Tests/*.test.mjs'
+
+      - name: Zapara.Web.Tests
+        run: dotnet test src/Zapara.Web.Tests --logger "console;verbosity=normal"
+
+      - name: Clean up
+        if: always()
+        run: git reset --hard -q && git clean -ffdxq
+
+  desktop:
+    name: Desktop and client libraries (Linux)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    env:
+      # Windows-only, excluded on Linux (docs/CI.md):
+      # - AccountSessionVaultTests, AccountSessionVaultFailureTests: real DPAPI (ProtectedData) and Windows file ACLs.
+      # - ChatMediaPlayerTests.Playback_cleanup_retries_a_locked_file_then_deletes_it: Windows share-mode file locking.
+      DESKTOP_TEST_FILTER: >-
+        FullyQualifiedName!~Vograph.Desktop.Tests.AccountSessionVaultTests.&FullyQualifiedName!~Vograph.Desktop.Tests.AccountSessionVaultFailureTests.&FullyQualifiedName!=Vograph.Desktop.Tests.ChatMediaPlayerTests.Playback_cleanup_retries_a_locked_file_then_deletes_it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: true
+          persist-credentials: false
+
+      # Avalonia 12 source generators (InitializeComponent, x:Name fields) need Roslyn 4.14+, which the
+      # .NET 8 SDK does not ship; the newest installed SDK (10) builds, the .NET 8 runtime runs the tests.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      # Avalonia headless renders text through libSkiaSharp, which needs libfontconfig.so.1 and at least one
+      # font (otherwise "Default font family name can't be null or empty"). The runner user has no sudo, so
+      # what is missing is unpacked from the distribution's .deb into RUNNER_TEMP (no root, nothing installed
+      # system-wide); LD_LIBRARY_PATH and FONTCONFIG_FILE point the test step at it.
+      - name: Native libraries and fonts for Avalonia headless
+        run: |
+          dir="$RUNNER_TEMP/native"
+          rm -rf "$dir" && mkdir -p "$dir/debs" "$dir/root" "$dir/cache"
+          cd "$dir/debs"
+          if ! ldconfig -p | grep -q 'libfontconfig\.so\.1'; then
+            apt-get download libfontconfig1
+            for p in libfreetype6 libexpat1 libpng16-16t64 libpng16-16 libbrotli1; do
+              dpkg -s "$p" >/dev/null 2>&1 || apt-get download "$p" 2>/dev/null || true
+            done
+          fi
+          if [ -z "$(find /usr/share/fonts /usr/local/share/fonts -type f \( -name '*.ttf' -o -name '*.otf' \) 2>/dev/null | head -n 1)" ]; then
+            apt-get download fonts-dejavu-core
+          fi
+          for f in *.deb; do [ -e "$f" ] && dpkg-deb -x "$f" "$dir/root"; done
+          lib="$(find "$dir/root" -name 'libfontconfig.so.1' | head -n 1)"
+          if [ -n "$lib" ]; then
+            echo "LD_LIBRARY_PATH=$(dirname "$lib")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          fi
+          cat > "$dir/fonts.conf" <<EOF
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+          <fontconfig>
+            <dir>/usr/share/fonts</dir>
+            <dir>$dir/root/usr/share/fonts</dir>
+            <cachedir>$dir/cache</cachedir>
+          </fontconfig>
+          EOF
+          echo "FONTCONFIG_FILE=$dir/fonts.conf" >> "$GITHUB_ENV"
+
+      - name: Client library tests
+        run: |
+          dotnet test src/Zapara.Client.Domain.Tests --logger "console;verbosity=normal"
+          dotnet test src/Vograph.Timetable.Tests --logger "console;verbosity=normal"
+
+      # Vograph.Desktop targets net8.0-windows10.0.19041.0; EnableWindowsTargeting lets the Linux SDK build it.
+      # The tests run headless (Avalonia.Headless) and do not need a display.
+      # Tests create folders under Path.GetTempPath() (e.g. /tmp/opencode/...); on a shared runner /tmp may already
+      # hold such a folder owned by another user, so each job uses its own temp directory.
+      - name: Vograph.Desktop.Tests
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: >-
+          dotnet test src/Vograph.Desktop.Tests -p:EnableWindowsTargeting=true
+          --filter "$DESKTOP_TEST_FILTER" --logger "console;verbosity=normal"
+
+      - name: Clean up
+        if: always()
+        run: git reset --hard -q && git clean -ffdxq
