@@ -63,7 +63,7 @@ public class AutomationIdsTests : UiTest
         "Nav.Schedule", "Nav.Week", "Nav.Summary", "Nav.Teachers", "Nav.Maps", "Nav.Friends", "Nav.Homework", "Nav.Community", "Nav.Settings",
         "Schedule.Title", "Schedule.Subtitle", "Schedule.Prev", "Schedule.Next", "Schedule.Today", "Schedule.Search", "Schedule.More", "Schedule.Hero",
         "ScheduleSegment.0", "ScheduleSegment.1", "ScheduleSegment.2",
-        "Lesson.Title", "Lesson.Rename", "Lesson.Homework", "Lesson.Map", "Lesson.Hw",
+        "Lesson.Title", "Lesson.Rename", "Lesson.Homework", "Lesson.Map", "Lesson.Hw", "Lesson.More", "Lesson.InlineMap", "Lesson.Sheet",
         "Week.Prev", "Week.Title", "Week.Next", "Week.Today", "Week.Search", "Week.More", "Week.Day",
         "Summary.Total", "SummarySegment.0", "SummarySegment.1", "SummarySegment.2",
         "Teachers.Search", "Teachers.OnlyMine", "Teachers.List", "Teachers.Retry",

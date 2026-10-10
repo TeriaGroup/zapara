@@ -126,7 +126,8 @@ public static class Scenarios
             // lecture is Monday's: «press Home and there will be a lesson today» fails on a Thursday with a
             // message that reads like an app regression. Drive the arrows to the day instead (T12-R4).
             var (day, titles) = GoToLessonDay(ui, t => t.Contains("Матан"), "день с парой «Матан»");
-            ui.Hover(ui.Find("Lesson.Title"));
+            // #9: the lesson's actions live in its sheet, opened from «⋯» (or a tap on the card).
+            ui.Click("Lesson.More");
             ui.Click("Lesson.Rename");
             ui.Find("Dialog.Name");
             // The dialog is really about that lesson: both fields carry the seeded override back.
@@ -138,7 +139,7 @@ public static class Scenarios
             ui.Keys(VirtualKeyShort.ESCAPE);
             if (ui.IsShown("Dialog.Name")) throw new Exception("Escape не закрыл диалог переименования");
 
-            ui.Hover(ui.Find("Lesson.Title"));
+            if (!ui.IsShown("Lesson.Homework")) ui.Click("Lesson.More");
             ui.Click("Lesson.Homework");
             ui.Find("Homework.Add");
             var filtered = ui.Window.FindAllDescendants().Any(element => element.Name == "Все предметы");
