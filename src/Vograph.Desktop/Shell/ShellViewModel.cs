@@ -749,9 +749,9 @@ public sealed partial class ShellViewModel : ViewModelBase
         GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {today.ToString("d MMM", culture)}";
         // LastFetchedAt is stored in UTC and Stale compares against UTC; the default clock is DateTime.Now, so
         // this is the same instant it always was, only sourced from the clock a test can pin.
-        var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, now.ToUniversalTime(), App.Loc);
-        StaleText = data.SourceStale ? "Данные расписания могут быть устаревшими" : stale;
-        StaleWarn = warn || data.SourceStale;
+        var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, now.ToUniversalTime(), App.Loc, data.SourceStale);
+        StaleText = stale;
+        StaleWarn = warn;
     }
 
     /// <summary>Sealed type: 'internal' rather than 'protected' so later dialogs in this assembly can raise it without CS0628.

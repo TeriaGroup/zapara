@@ -218,7 +218,7 @@ public class I18nService
             ["placeholderTitle"] = "Раздел в разработке", ["placeholderHint"] = "Появится на следующем этапе", ["loadingTitle"] = "Загружаю расписание…",
             ["themeToggleTip"] = "Переключить тему", ["sidebarToggleTip"] = "Свернуть панель (Ctrl+B)", ["sidebarExpandTip"] = "Развернуть панель (Ctrl+B)",
             ["groupPickTitle"] = "Выбор группы", ["search"] = "Поиск", ["groupSearchHint"] = "Номер группы", ["select"] = "Выбрать",
-            ["confirm"] = "Подтвердить", ["delete"] = "Удалить", ["updatedChip"] = "обновлено {0}", ["errorTitle"] = "Ошибка",
+            ["confirm"] = "Подтвердить", ["delete"] = "Удалить", ["updatedChip"] = "обновлено {0}", ["scheduleFromChip"] = "Расписание от {0}", ["scheduleMaybeOld"] = "Расписание может быть неактуальным", ["errorTitle"] = "Ошибка",
             ["bootstrapError"] = "Не удалось загрузить расписание", ["bootstrapHint"] = "Проверьте сеть и повторите", ["retry"] = "Повторить",
             ["friendAbsent"] = "нет рядом", ["inter100"] = "в той же аудитории", ["inter75"] = "на том же этаже", ["inter50"] = "в том же корпусе", ["inter25"] = "в вузе",
             ["savedOk"] = "Сохранено", ["noGroup"] = "Группа не выбрана", ["noGroupHint"] = "Расписание и задания появятся после выбора группы",
