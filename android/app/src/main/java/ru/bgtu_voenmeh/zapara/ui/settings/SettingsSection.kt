@@ -289,6 +289,7 @@ fun SettingsSection(
         else { returnSection = null; section = target }
     }
     BackHandler(enabled = section != null && legalId == null) { backToSettings() }
+    val accountForm = remember { ru.bgtu_voenmeh.zapara.ui.account.AccountFormMemory() } // #109: переживает открытие документа
     if (legalId != null) {
         LegalDocumentPage(legalId!!, onClose = { legalId = null })
         return
@@ -356,10 +357,11 @@ fun SettingsSection(
                 { backToSettings() }, tag = "Settings.Overview.Back",
                 leadingIcon = R.drawable.ic_chevron_left, trailingIcon = null) }
             if (section == "account") {
-            item { AccountCard(account, onAccount) { id ->
-                onAccount(AccountEvent.ClearSensitive)
+            item { AccountCard(account, onAccount, onOpenLegal = { id ->
+                // #109: из формы регистрации документ открывается без очистки пароля — ввод не теряется.
+                if (!LegalReturn.keepsRegistration(account.guest, account.registration)) onAccount(AccountEvent.ClearSensitive)
                 legalId = id
-            } }
+            }, memory = accountForm) }
             if (state.signedIn) item { ZCard(Modifier.fillMaxWidth()) {
                 CloudSyncSummary(state.cloudSync)
                 ZButton(uiText(R.string.space_day_sync_now), { onEvent(SettingsEvent.SyncNow) },
@@ -1043,4 +1045,9 @@ private fun readSupportFile(context: android.content.Context, uri: Uri, max: Int
     } ?: return null
     if (bytes.isEmpty()) return null
     return name to bytes
+}
+
+/** #109: открытие документа из формы регистрации не сбрасывает пароль, иначе после возврата ввод потерян. */
+object LegalReturn {
+    fun keepsRegistration(guest: Boolean, registration: Boolean): Boolean = guest && registration
 }

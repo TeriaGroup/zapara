@@ -305,7 +305,8 @@ internal suspend fun readUiCapabilities(transport: HttpExchange, baseUri: String
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLegal: (String) -> Unit = {}) {
+fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLegal: (String) -> Unit = {},
+                memory: AccountFormMemory = remember { AccountFormMemory() }) {
     val c = Zapara.colors
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
     val currentEvent = androidx.compose.runtime.rememberUpdatedState(onEvent)
@@ -334,12 +335,17 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             ZButton(stringResource(R.string.repeat), { onEvent(AccountEvent.RetryCapabilities) },
                 ghost = true, enabled = !state.capabilitiesLoading, tag = "Account.RetryCapabilities")
         }
-        if (!state.showAccount && !(state.guest && state.registration)) { // в регистрации документы — у согласия
-        Text(stringResource(R.string.account_isolation), style = Zapara.typography.caption, color = c.text2)
+        if (!state.showAccount) {
+        // #109: предупреждение о раздельных данных видно и при регистрации; крупные кнопки документов — только вне её
+        // (в регистрации документы открываются ссылками у согласия).
+        Text(stringResource(R.string.account_isolation), style = Zapara.typography.caption, color = c.text2,
+            modifier = Modifier.testTag("Account.Isolation"))
+        if (!(state.guest && state.registration)) {
         ZActionButton(stringResource(R.string.face_agreement), { onOpenLegal("agreement") },
             tag = "Legal.Agreement", leadingIcon = R.drawable.ic_file)
         ZActionButton(stringResource(R.string.face_policy), { onOpenLegal("policy") },
             tag = "Legal.Policy", leadingIcon = R.drawable.ic_shield)
+        }
         }
         if (!state.configured || !state.ready) return@ZCard
         if (state.guest) {
@@ -347,11 +353,13 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             androidx.compose.runtime.LaunchedEffect(state.recoveryCompletionVersion) {
                 if (state.recoveryCompletionVersion > 0) recoveryOpen = false
             }
-            var confirmPassword by remember(state.registration) { mutableStateOf("") }
-            LaunchedEffect(state.password) { if (state.password.isEmpty()) confirmPassword = "" }
-            // #109 / AN-16: вкладки «Вход / Регистрация»; ошибки — после ухода с поля или нажатия основной кнопки.
-            var attempted by remember(state.registration) { mutableStateOf(false) }
-            val touched = remember(state.registration) { androidx.compose.runtime.mutableStateListOf<String>() }
+            // #109: подтверждение, попытка отправки и «тронутые» поля живут в memory (её держит экран настроек),
+            // поэтому переход к документу согласия и обратно их не теряет.
+            LaunchedEffect(state.registration) { memory.mode(state.registration) }
+            LaunchedEffect(state.password) { if (state.password.isEmpty()) memory.confirmPassword = "" }
+            val confirmPassword = memory.confirmPassword
+            val attempted = memory.attempted
+            val touched = memory.touched
             fun shown(field: String) = attempted || field in touched
             if (state.registrationAvailable) {
                 ru.bgtu_voenmeh.zapara.ui.components.ZSegmented(
@@ -373,11 +381,12 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                 onEvent(AccountEvent.Password(it))
             }
             if (state.registration) PasswordProgress(state.password)
-            else if (!state.passwordValid && shown("password")) Text(stringResource(R.string.ux60_account_password_hint),
+            // #109: и в регистрации — иначе пустой пароль после «Зарегистрироваться» ничем не подсвечен.
+            if (passwordErrorShown(shown("password"), state.passwordValid)) Text(stringResource(R.string.ux60_account_password_hint),
                 style = Zapara.typography.caption, color = c.bad, modifier = Modifier.testTag("Account.PasswordError"))
             if (state.registration) {
                 AccountField(confirmPassword, stringResource(R.string.ux300_android_confirm_password),
-                    "Account.ConfirmPassword", password = true) { confirmPassword = it }
+                    "Account.ConfirmPassword", password = true) { memory.confirmPassword = it }
                 if (confirmMismatchShown(attempted, confirmPassword, state.password))
                     Text(stringResource(R.string.ux300_android_password_mismatch),
                         style = Zapara.typography.caption, color = c.bad,
@@ -402,7 +411,7 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                 // Одна основная кнопка, всегда доступна (кроме отправки): при ошибках показывает их, а не молчит.
                 val ready = if (state.registration) state.canSubmitCredentials && confirmPassword == state.password
                     else state.canSubmitCredentials
-                val submit = { if (ready) onEvent(AccountEvent.Submit) else attempted = true }
+                val submit = { if (ready) onEvent(AccountEvent.Submit) else memory.attempted = true }
                 if (state.registration) {
                     ZButton(stringResource(R.string.account_register), submit,
                         enabled = !state.busy && !state.externalPending, busy = state.busy, tag = "Account.Register")
@@ -896,3 +905,26 @@ private fun AccountField(value: String, label: String, tag: String, password: Bo
  */
 internal fun confirmMismatchShown(attempted: Boolean, confirmPassword: String, password: String): Boolean =
     (attempted || confirmPassword.isNotEmpty()) && confirmPassword != password
+
+/** #109: ошибка пароля — после ухода с поля или попытки отправки, во входе и в регистрации (в том числе пустой пароль). */
+internal fun passwordErrorShown(shown: Boolean, passwordValid: Boolean): Boolean = shown && !passwordValid
+
+/**
+ * #109: состояние формы входа/регистрации, которое не лежит в [AccountUiState]: подтверждение пароля, попытка отправки,
+ * поля, с которых уходил фокус. Держит её экран настроек, чтобы открытие документа согласия (экран целиком сменяется
+ * на документ) не сбрасывало ввод. В Bundle ничего не пишется — подтверждение пароля только в памяти.
+ */
+class AccountFormMemory {
+    var confirmPassword by mutableStateOf("")
+    var attempted by mutableStateOf(false)
+    val touched = androidx.compose.runtime.mutableStateListOf<String>()
+    private var registration: Boolean? = null
+
+    /** Смена «Вход / Регистрация» начинает форму заново; повтор того же режима (возврат с документа) ничего не трогает. */
+    fun mode(registration: Boolean) {
+        if (this.registration != null && this.registration != registration) {
+            confirmPassword = ""; attempted = false; touched.clear()
+        }
+        this.registration = registration
+    }
+}

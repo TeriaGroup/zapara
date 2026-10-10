@@ -4,6 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import ru.bgtu_voenmeh.zapara.ui.account.confirmMismatchShown
+import ru.bgtu_voenmeh.zapara.ui.account.passwordErrorShown
+import ru.bgtu_voenmeh.zapara.ui.account.AccountFormMemory
+import ru.bgtu_voenmeh.zapara.ui.settings.LegalReturn
 import org.junit.Test
 import java.io.File
 
@@ -32,7 +35,7 @@ class SignInTest {
     }
 
     @Test fun one_primary_that_is_enabled_and_reveals_errors() {
-        assertTrue(account.contains("val submit = { if (ready) onEvent(AccountEvent.Submit) else attempted = true }"))
+        assertTrue(account.contains("val submit = { if (ready) onEvent(AccountEvent.Submit) else memory.attempted = true }"))
         assertFalse(account.contains("enabled = state.canSubmitCredentials"))
         assertEquals(2, Regex("submit,\\n\\s+enabled = !state.busy && !state.externalPending, busy = state.busy").findAll(account).count())
     }
@@ -66,5 +69,52 @@ class SignInTest {
         val ui = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/account/AccountUi.kt").readText()
         assertTrue(ui.contains("if (confirmMismatchShown(attempted, confirmPassword, state.password))"))
         assertFalse(ui.contains("if (confirmPassword.isNotEmpty() && confirmPassword != state.password)"))
+    }
+
+    private val accountUi get() = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/account/AccountUi.kt").readText()
+    private val settings get() = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/settings/SettingsSection.kt").readText()
+
+    @Test fun empty_registration_password_shows_an_error_after_submit() {
+        assertTrue("пустой пароль после попытки", passwordErrorShown(shown = true, passwordValid = false))
+        assertFalse("до попытки и ухода с поля — молчим", passwordErrorShown(shown = false, passwordValid = false))
+        assertFalse(passwordErrorShown(shown = true, passwordValid = true))
+        // ошибка больше не спрятана за else у PasswordProgress — показывается и в регистрации
+        assertTrue(accountUi.contains("if (state.registration) PasswordProgress(state.password)\n"))
+        assertTrue(accountUi.contains("if (passwordErrorShown(shown(\"password\"), state.passwordValid)) Text(stringResource(R.string.ux60_account_password_hint)"))
+        assertFalse(accountUi.contains("else if (!state.passwordValid && shown(\"password\"))"))
+    }
+
+    @Test fun opening_a_consent_document_keeps_the_registration_input() {
+        val memory = AccountFormMemory()
+        memory.mode(registration = true)
+        memory.confirmPassword = "secret-password"; memory.attempted = true; memory.touched += "name"
+        // возврат с документа: тот же режим — ничего не сбрасывается
+        memory.mode(registration = true)
+        assertEquals("secret-password", memory.confirmPassword)
+        assertTrue(memory.attempted); assertEquals(listOf("name"), memory.touched.toList())
+        // смена режима начинает форму заново
+        memory.mode(registration = false)
+        assertEquals("", memory.confirmPassword); assertFalse(memory.attempted); assertTrue(memory.touched.isEmpty())
+        // пароль из состояния не чистится, если документ открыт из регистрации; в остальных случаях — как раньше
+        assertTrue(LegalReturn.keepsRegistration(guest = true, registration = true))
+        assertFalse(LegalReturn.keepsRegistration(guest = true, registration = false))
+        assertFalse(LegalReturn.keepsRegistration(guest = false, registration = false))
+        // memory держит экран настроек — над ранним return к документу, — а не сама карточка
+        val held = settings.indexOf("val accountForm = remember { ru.bgtu_voenmeh.zapara.ui.account.AccountFormMemory() }")
+        val docReturn = settings.indexOf("LegalDocumentPage(legalId!!")
+        assertTrue(held in 0 until docReturn)
+        assertTrue(settings.contains("if (!LegalReturn.keepsRegistration(account.guest, account.registration)) onAccount(AccountEvent.ClearSensitive)"))
+        assertTrue(settings.contains("}, memory = accountForm) }"))
+        assertFalse("подтверждение не в remember карточки", accountUi.contains("var confirmPassword by remember(state.registration)"))
+        assertFalse(accountUi.contains("var attempted by remember(state.registration)"))
+    }
+
+    @Test fun account_isolation_notice_stays_visible_during_registration() {
+        val block = accountUi.substring(accountUi.indexOf("if (!state.showAccount) {"), accountUi.indexOf("if (!state.configured || !state.ready) return@ZCard"))
+        val notice = block.indexOf("R.string.account_isolation")
+        val guard = block.indexOf("if (!(state.guest && state.registration))")
+        assertTrue("предупреждение — до условия регистрации", notice in 0 until guard)
+        assertTrue("кнопки документов — под условием", block.indexOf("tag = \"Legal.Agreement\"") > guard)
+        assertFalse(accountUi.contains("if (!state.showAccount && !(state.guest && state.registration))"))
     }
 }
