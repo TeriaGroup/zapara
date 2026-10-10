@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import * as planner from "./planner.ts";
 import { absoluteDate, freeGaps, gapsBeforeLessons, hasLessonOverlap, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner.ts";
 import type { HomeworkItem, Lesson } from "./types";
 const lesson=(start:string,end:string,subject="Математика"):Lesson=>({timeStart:start,timeEnd:end,subjectRaw:subject,subjectNormalized:subject,dayOfWeek:1,parity:0,index:0,typeRaw:"Лекция",teacherRaw:null,classroomRaw:null,roomRaw:null,buildingRaw:null});
@@ -23,3 +24,16 @@ test("deadline window includes selected day and two following calendar dates",()
 test("personal due date uses nth distinct lesson day strictly after creation",()=>{const item:HomeworkItem={id:"a",subject:"Математика",text:"Задание",done:false,created:new Date(2026,8,27).toISOString(),targetNthOccurrence:2};const period={start:"2026-09-01",weekCount:2,title:"Осень",timeZone:"Europe/Moscow"};const due=personalHomeworkDue(item,[lesson("09:00","10:00"),lesson("11:00","12:00")],period,false);assert.equal(due?.getDate(),5);assert.equal(due?.getMonth(),9);assert.equal(personalHomeworkDue({...item,subject:"Unknown"},[lesson("09:00","10:00")],period,false),null);});
 
 test("overlaps are distinct from short adjacent breaks",()=>{assert.equal(hasLessonOverlap([lesson("09:00","10:00"),lesson("10:00","11:00")]),false);assert.equal(hasLessonOverlap([lesson("09:00","10:00"),lesson("09:59","11:00")]),true);});
+
+test("r2: the empty-day line ends with one period after Intl's « г.», and says «пары»", () => {
+  const { endSentence, nextLessonsLine } = { endSentence: planner.endSentence, nextLessonsLine: planner.nextLessonsLine };
+  const monday = new Date(2026, 9, 12);
+  assert.ok(absoluteDate(monday).endsWith(" г."), absoluteDate(monday)); // Intl сам ставит точку после «г»
+  assert.equal(nextLessonsLine(monday), "Ближайшие пары — понедельник, 12 октября 2026 г.");
+  assert.doesNotMatch(nextLessonsLine(monday), /\.\.$/);
+  assert.equal(nextLessonsLine(undefined), "В ближайшие три недели в сохранённом расписании пар нет.");
+  assert.equal(endSentence("Готово"), "Готово.");
+  assert.equal(endSentence("12 октября 2026 г."), "12 октября 2026 г.");
+  assert.equal(endSentence("Загрузка…"), "Загрузка…");
+  assert.equal(endSentence("Правда? "), "Правда?");
+});

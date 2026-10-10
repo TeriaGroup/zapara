@@ -66,6 +66,12 @@ export function nearbyHomework(items: HomeworkItem[], date: Date, subjects: stri
         .sort((a, b) => (a.deadlineAt ? Date.parse(a.deadlineAt) : Infinity) - (b.deadlineAt ? Date.parse(b.deadlineAt) : Infinity));
 }
 export function absoluteDate(date: Date) { return date.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
+/** Точка в конце фразы — только если её там ещё нет: absoluteDate() с годом уже кончается на « г.» (r2: «2026 г..»). */
+export function endSentence(text: string) { return /[.!?…]$/.test(text.trimEnd()) ? text.trimEnd() : text.trimEnd() + "."; }
+/** Строка пустого дня: когда ближайшие пары (глоссарий: «пары», не «занятия»). */
+export function nextLessonsLine(next?: Date | null) {
+    return next ? endSentence(`Ближайшие пары — ${absoluteDate(next)}`) : "В ближайшие три недели в сохранённом расписании пар нет.";
+}
 export function personalHomeworkDue(item: HomeworkItem, lessons: Lesson[], period: import("./types").Period, invert: boolean): Date | null {
     const created = item.legacyCreatedLocalDate ? localDay(item.legacyCreatedLocalDate) : new Date(item.created);
     if (!created || !Number.isFinite(created.getTime()))
