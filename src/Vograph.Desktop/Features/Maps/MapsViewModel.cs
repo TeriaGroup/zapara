@@ -674,7 +674,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         var from = manualStartId is not null ? guessed : MapsComposer.StartFor(_graph, guessed?.Id, dest?.Id) ?? guessed;
         if (from is null || dest is null)
         {
-            SetRouteIssue(dest is null ? "Аудитория не найдена на плане. Проверьте корпус и номер."
+            SetRouteIssue(dest is null ? MapsComposer.RoomNotMarked(_destRoomKey, Current, App.Loc)
                 : "Не удалось выбрать начало маршрута. Выберите вход.");
             ApplyRoute(null);
             NotifyStartFallback(guessed, from);
