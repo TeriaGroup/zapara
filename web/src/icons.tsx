@@ -19,6 +19,7 @@ const paths = {
   refresh: "M21 12a9 9 0 1 1-3-6.7 M21 3v6h-6",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z M21 21l-4.3-4.3",
   pin: "M16 9V4l1-1V2H7v1l1 1v5l-3 3v1h14v-1z M12 17v5",
+  megaphone: "M3 11l18-5v12L3 14v-3z M11.6 16.8a3 3 0 1 1-5.8-1.6",
   ballot: "M8 6h13 M8 12h13 M8 18h13 M3 6l1 1 2-2 M3 12l1 1 2-2 M3 18l1 1 2-2",
   plus: "M12 5v14 M5 12h14",
   minus: "M5 12h14",

@@ -1986,7 +1986,7 @@ function GroupContent() {
               {obligationTarget&&obligationTarget.source===thread.topicId&&<GroupObjectFocus key={JSON.stringify(obligationTarget)} id={`obligation-${obligationTarget.kind}-${obligationTarget.kind==="ballot"?obligationTarget.source+"-":""}${obligationTarget.id}`}/>}
               <div className="row">
                 <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; setThread("list"); }}>Все разделы</button>
-                <h2>{thread.icon} {thread.title}</h2>
+                <h2 className="topic-heading"><TopicMark topic={thread} /> {thread.title}</h2>
                 {nextUnread && <button className="btn" type="button" disabled={nextUnreadBusy} onClick={() => void openNextUnread()}
                   title={`Открыть: ${nextUnread.title}`}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
               </div>
@@ -2005,7 +2005,7 @@ function GroupContent() {
             <div className="row group-thread-heading">
               {chat?.kind === "group" && <button className={"btn" + (topicPage || thread !== "list" && thread.topicId === null ? " group-redundant-back" : "")} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все разделы</button>}
               <Avatar kind={chat.kind === "group" ? "group" : "user"} id={chat.kind === "group" ? home.communityId : chat.peerUserId} name={chat.kind === "group" ? home.groupName || home.name : chat.title} />
-              <h2>{chat?.kind === "group" && thread !== "list" ? `${thread.icon} ${thread.title}` : (chat?.title || "Чат")}</h2>
+              <h2 className={chat?.kind === "group" && thread !== "list" ? "topic-heading" : undefined}>{chat?.kind === "group" && thread !== "list" ? <><TopicMark topic={thread} /> {thread.title}</> : (chat?.title || "Чат")}</h2>
               {chat.kind === "group" && nextUnread && <button className="btn" type="button" disabled={nextUnreadBusy} onClick={() => void openNextUnread()}
                 title={`Открыть: ${nextUnread.title}`}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
             </div>
