@@ -131,17 +131,19 @@ public class PolishTests : UiTest
         window.Show();
         Pump();
 
-        var actions = window.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
-            .Where(button => AutomationProperties.GetAutomationId(button) is "Lesson.Map" or "Lesson.Homework")
+        // #9: closed cards show the sheet toggle «⋯» on every card and «Карта» only on the next lesson; neither waits for hover.
+        List<Avalonia.Controls.Button> Actions() => window.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
+            .Where(button => AutomationProperties.GetAutomationId(button) is "Lesson.More" or "Lesson.InlineMap" && button.IsEffectivelyVisible)
             .ToList();
-        Assert.Equal(4, actions.Count);
-        Assert.All(actions, button => Assert.True(button.IsEffectivelyVisible));
+        var actions = Actions();
+        Assert.Equal(2, actions.Count(button => AutomationProperties.GetAutomationId(button) == "Lesson.More"));
+        Assert.Single(actions, button => AutomationProperties.GetAutomationId(button) == "Lesson.InlineMap");
 
         var card = window.GetVisualDescendants().OfType<LessonCardView>().First();
         var centre = card.TranslatePoint(new Point(card.Bounds.Width / 2, card.Bounds.Height / 2), window)!.Value;
         window.MouseMove(centre);
         Pump();
-        Assert.All(actions, button => Assert.True(button.IsEffectivelyVisible));
+        Assert.Equal(actions.Count, Actions().Count);
         AssertNoBindingErrors();
     }
 
