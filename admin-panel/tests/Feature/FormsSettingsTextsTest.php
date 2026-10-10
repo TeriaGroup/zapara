@@ -85,6 +85,26 @@ class FormsSettingsTextsTest extends TestCase
         $this->get('/admin/quotas')->assertOk()->assertSee('2 ГБ')->assertSee('300 МБ')->assertDontSee('ГиБ');
     }
 
+    public function test_r2_switch_labels_follow_the_switch_and_tabs_wrap_on_a_phone(): void
+    {
+        $this->rememberSettings();
+        $this->actingAs($this->makeUser(true));
+
+        $this->assertSame('Регистрация закрыта', SystemSettings::switchLabel('Регистрация', false, 'открыта', 'закрыта'));
+        $page = Livewire::test(SystemSettings::class)
+            ->fillForm(['registration_enabled' => false, 'vk_enabled' => false])
+            ->assertSee('Регистрация закрыта')
+            ->assertDontSee('Регистрация открыта')
+            ->assertSee('VK ID выключен');
+        $page->fillForm(['registration_enabled' => true, 'vk_enabled' => true])
+            ->assertSee('Регистрация открыта')
+            ->assertDontSee('Регистрация закрыта')
+            ->assertSee('VK ID включён');
+
+        $html = $this->get('/admin/settings')->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/@media \(max-width: 767px\) \{\s*\.fi-tabs \{\s*flex-wrap: wrap;/', $html);
+    }
+
     public function test_secret_fields_show_whether_a_key_is_set_and_change_only_on_request(): void
     {
         $this->rememberSettings();
