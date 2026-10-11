@@ -34,13 +34,43 @@ jobs:
           clean: true
           persist-credentials: false
 
-      # The runner user cannot write the default /usr/share/dotnet. The runner context is not available in
-      # job-level env, so the install dir is set on this step; setup-dotnet exports DOTNET_ROOT and PATH for the rest.
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+      # The runner user cannot write the default /usr/share/dotnet (#160). As in tests.yml (#143), .NET goes into the
+      # runner's tool cache (a stable path, not RUNNER_TEMP), so a runner downloads each SDK once: install-dotnet skips
+      # a version that is already there. Same directory as tests.yml (zapara-dotnet-8, .NET 8 only); a runner runs one
+      # job at a time. The runner context is not available in job-level env, so the install dir is set on each step;
+      # setup-dotnet exports DOTNET_ROOT and PATH for the rest.
+      # A directory without .complete is left over from an interrupted install (job cancelled or timed out mid-extract):
+      # drop it, and drop the marker until this job's setup succeeds again.
+      - name: Drop an unfinished .NET install
+        run: |
+          d="${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8"
+          [ -f "$d/.complete" ] || rm -rf "$d"
+          rm -f "$d/.complete"
+
+      # A hung download (seen for 45 min on one runner) stops after 5 min and is retried once from a clean directory.
+      - id: dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        timeout-minutes: 5
+        continue-on-error: true
         env:
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8
         with:
           dotnet-version: 8.0.x
+
+      - name: Retry .NET setup from a clean directory
+        if: steps.dotnet.outcome == 'failure'
+        run: rm -rf "${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8"
+
+      - if: steps.dotnet.outcome == 'failure'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        timeout-minutes: 5
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Mark the .NET install complete
+        run: touch "${RUNNER_TOOL_CACHE:?}/zapara-dotnet-8/.complete"
 
       - name: Image upload tests (Debug, no license needed)
         run: |
