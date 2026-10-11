@@ -35,26 +35,12 @@ public class Database : IDisposable
 
     public SqliteConnection Connection => _conn;
 
-    private readonly object _writeLock = new();
+    /// <summary>#154: every multi-statement write (<see cref="PrivateSyncOutbox.InTransaction{T}"/>, BeginTransaction)
+    /// runs inside this scope; single commands take the same lock on their own (#161, see
+    /// <see cref="GuardedSqliteConnection.EnterWrite"/>). Reentrant on the same thread. Synchronous only: never await
+    /// while holding it.</summary>
+    public GuardedSqliteConnection.WriteScope EnterWrite() => _conn.EnterWrite();
 
-    /// <summary>#154: one SQLite connection has one transaction and one savepoint stack, shared by every thread. A
-    /// SAVEPOINT or BEGIN opened on another thread nests inside the open one: the outer RELEASE/COMMIT removes the inner
-    /// savepoint ("no such savepoint") and the outer ROLLBACK silently undoes the inner write. Every multi-statement
-    /// write (<see cref="PrivateSyncOutbox.InTransaction{T}"/>, BeginTransaction) runs inside this scope, so they
-    /// never interleave. Reentrant on the same thread (Monitor), so nested InTransaction calls keep working.
-    /// Synchronous only: never await while holding it.</summary>
-    public WriteScope EnterWrite()
-    {
-        Monitor.Enter(_writeLock);
-        return new WriteScope(_writeLock);
-    }
-
-    public readonly struct WriteScope : IDisposable
-    {
-        private readonly object? _gate;
-        internal WriteScope(object gate) => _gate = gate;
-        public void Dispose() { if (_gate is not null) Monitor.Exit(_gate); }
-    }
     public bool UseApiCatalog { get; set; }
     public PrivateSyncOutbox? PrivateOutbox { get; set; }
 

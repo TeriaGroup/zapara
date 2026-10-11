@@ -1,3 +1,4 @@
+using System.Data;
 using System.Diagnostics;
 using Microsoft.Data.Sqlite;
 
@@ -19,9 +20,29 @@ public sealed class GuardedSqliteConnection : SqliteConnection
     private int _inFlight;
     private bool _closing;
     private bool _closed;
-    private bool _inClose; // Close() rolls an open transaction back with its own ROLLBACK command
+    private volatile bool _inClose; // Close() rolls an open transaction back with its own ROLLBACK command
+    private readonly object _write = new();
 
     public GuardedSqliteConnection(string connectionString) : base(connectionString) { }
+
+    /// <summary>#154/#161: the connection has one transaction and one savepoint stack for every thread. Whatever runs
+    /// while another thread's transaction is open becomes part of it: a nested SAVEPOINT loses its RELEASE (#154), a
+    /// single INSERT/UPDATE/DELETE is rolled back with the other thread's transaction (#161). So every command
+    /// execution (<see cref="GuardedCommand"/>) and every multi-statement transaction (Database.EnterWrite around
+    /// InTransaction and BeginTransaction) holds this one lock. Reentrant (Monitor), uncontended in the normal case.
+    /// Lock order: CoreGate, then this lock, then the internal command-list lock. Never await while holding it.</summary>
+    public WriteScope EnterWrite()
+    {
+        Monitor.Enter(_write);
+        return new WriteScope(_write);
+    }
+
+    public readonly struct WriteScope : IDisposable
+    {
+        private readonly object? _gate;
+        internal WriteScope(object gate) => _gate = gate;
+        public void Dispose() { if (_gate is not null) Monitor.Exit(_gate); }
+    }
 
     /// <summary>Commands created and not yet disposed.</summary>
     public int InFlight { get { lock (_sync) return _inFlight; } }
@@ -93,6 +114,32 @@ public sealed class GuardedSqliteConnection : SqliteConnection
         private int _released;
 
         internal void DisposeCore(bool disposing) => base.Dispose(disposing);
+
+        // #161: run under the connection's write lock. The transaction is bound here, under the lock, not at
+        // CreateCommand: a command created while another thread's BEGIN was open would otherwise carry that
+        // transaction (or, created before it, fail with "requires the command to have a transaction").
+        // Close() rolls back with its own command while the internal lock is held: that one skips the write lock.
+        public override int ExecuteNonQuery()
+        {
+            if (owner._inClose) return base.ExecuteNonQuery();
+            using (owner.EnterWrite()) { Bind(); return base.ExecuteNonQuery(); }
+        }
+
+        public override object? ExecuteScalar()
+        {
+            if (owner._inClose) return base.ExecuteScalar();
+            using (owner.EnterWrite()) { Bind(); return base.ExecuteScalar(); }
+        }
+
+        // ExecuteReader() and ExecuteDbDataReader end up here. Rows of a SELECT are stepped after the lock is released;
+        // reads cannot be rolled back, and every write statement here is executed by this first call.
+        public override SqliteDataReader ExecuteReader(CommandBehavior behavior)
+        {
+            if (owner._inClose) return base.ExecuteReader(behavior);
+            using (owner.EnterWrite()) { Bind(); return base.ExecuteReader(behavior); }
+        }
+
+        private void Bind() => Transaction = owner.Transaction;
 
         protected override void Dispose(bool disposing)
         {
