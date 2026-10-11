@@ -93,6 +93,33 @@ public sealed class WriteLockSourceScanTests
         Assert.True(checkedBodies >= 2, "PrivateSyncCoordinator.ApplyPush and ShellViewModel's 410 abort");
     }
 
+    [Fact]
+    public void Every_command_on_the_shared_connection_executes_under_the_write_lock()
+    {
+        // #161: single commands take the lock in GuardedCommand. A command or connection made any other way would not.
+        var bypass = new Regex(@"new\s+Sqlite(Command|Connection)\s*\(|SQLitePCL|raw\.sqlite3_|\.Handle\b.*sqlite");
+        var allowed = new[] { "src/Vograph.Core/Services/GuardedSqliteConnection.cs" };
+        var hits = Sources().Where(s => !allowed.Contains(s.Path))
+            .SelectMany(s => s.Lines.Select((line, i) => (s.Path, line, i)))
+            .Where(x => !IsComment(x.line) && bypass.IsMatch(x.line))
+            .Select(x => $"{x.Path}:{x.i + 1}: {x.line.Trim()}").ToList();
+        Assert.Empty(hits);
+
+        var database = File.ReadAllText(Path.Combine(ResourceKeysTests.RepoRoot(), "src", "Vograph.Core", "Services", "Database.cs"));
+        Assert.Contains("private readonly GuardedSqliteConnection _conn;", database);
+        Assert.Contains("_conn = new GuardedSqliteConnection(", database);
+        Assert.Contains("public GuardedSqliteConnection.WriteScope EnterWrite() => _conn.EnterWrite();", database);
+
+        // Every execution entry point of the command is overridden and takes the lock; ExecuteReader() and the async
+        // variants end up in ExecuteReader(CommandBehavior), ExecuteNonQuery or ExecuteScalar.
+        var command = typeof(Vograph.Core.Services.GuardedSqliteConnection).GetNestedType("GuardedCommand", System.Reflection.BindingFlags.NonPublic)!;
+        foreach (var (name, args) in new[] { ("ExecuteNonQuery", Type.EmptyTypes), ("ExecuteScalar", Type.EmptyTypes), ("ExecuteReader", new[] { typeof(System.Data.CommandBehavior) }) })
+            Assert.Equal(command, command.GetMethod(name, args)!.DeclaringType);
+        var guarded = File.ReadAllText(Path.Combine(ResourceKeysTests.RepoRoot(), "src", "Vograph.Core", "Services", "GuardedSqliteConnection.cs"));
+        foreach (var call in new[] { "return base.ExecuteNonQuery(); }", "return base.ExecuteScalar(); }", "return base.ExecuteReader(behavior); }" })
+            Assert.Contains("using (owner.EnterWrite()) { Bind(); " + call, guarded);
+    }
+
     private static int Line(string text, int index) => text.AsSpan(0, index).Count('\n') + 1;
 
     private static string Balanced(string text, int open, char o = '(', char c = ')')
