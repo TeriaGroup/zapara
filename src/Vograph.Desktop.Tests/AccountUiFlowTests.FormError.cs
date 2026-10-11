@@ -99,6 +99,31 @@ public sealed partial class AccountUiFlowTests
     }
 
     [Fact]
+    public async Task Routine_refresh_with_a_still_invalid_session_keeps_the_rejected_reauth_error()
+    {
+        // #157: после отклонённого повторного входа фоновое обновление профиля (раз в 2 мин) снова получает
+        // invalid_session; это не успешный переход, ошибка формы остаётся.
+        await using var f = new Fixture();
+        await f.Login();
+        var previous = f.Handler.Send;
+        f.Handler.Send = (request, token) => request.RequestUri!.AbsolutePath == "/api/v1/account/me"
+            ? Task.FromResult(Json(new AccountError("ignored", 401, "invalid_session"), HttpStatusCode.Unauthorized))
+            : previous(request, token);
+        await f.Vm.RefreshRemoteAsync();
+        Assert.True(f.Vm.ShowLogin);
+        var refresh = f.Handler.Send;
+        f.Handler.Send = (request, token) => request.RequestUri!.AbsolutePath == "/api/v1/auth/login"
+            ? Task.FromResult(Json(new AccountError("ignored", 401, "invalid_credentials"), HttpStatusCode.Unauthorized))
+            : refresh(request, token);
+        f.Vm.Username = "Test.User"; f.Vm.Password = Password;
+        await f.Vm.SubmitCommand.ExecuteAsync(null);
+        Assert.Contains("Неверный логин или пароль", f.Vm.FormError);
+        await f.Vm.RefreshRemoteAsync();
+        Assert.True(f.Vm.ShowLoginForm);
+        Assert.Contains("Неверный логин или пароль", f.Vm.FormError);
+    }
+
+    [Fact]
     public async Task Startup_vault_read_failure_still_shows_in_the_status_line()
     {
         await using var f = new Fixture();
